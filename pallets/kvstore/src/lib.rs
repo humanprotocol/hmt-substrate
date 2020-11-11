@@ -4,6 +4,7 @@
 /// Learn more about FRAME and the core library of Substrate FRAME pallets:
 /// https://substrate.dev/docs/en/knowledgebase/runtime/frame
 
+use sp_std::prelude::*;
 use frame_support::{decl_module, decl_storage, decl_event, decl_error, dispatch, ensure, traits::Get};
 use frame_system::ensure_signed;
 
