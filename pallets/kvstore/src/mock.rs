@@ -1,6 +1,6 @@
 use crate::{Module, Trait};
 use sp_core::H256;
-use frame_support::{impl_outer_origin, parameter_types, weights::Weight};
+use frame_support::{impl_outer_event, impl_outer_origin, parameter_types, weights::Weight};
 use sp_runtime::{
 	traits::{BlakeTwo256, IdentityLookup}, testing::Header, Perbill,
 };
@@ -21,6 +21,17 @@ parameter_types! {
 	pub const AvailableBlockRatio: Perbill = Perbill::from_percent(75);
 }
 
+mod KVStorePallet {
+	pub use crate::Event;
+}
+
+impl_outer_event! {
+	pub enum TestEvent for Test {
+		KVStorePallet<T>,
+		system<T>,
+	}
+}
+
 impl system::Trait for Test {
 	type BaseCallFilter = ();
 	type Origin = Origin;
@@ -32,7 +43,7 @@ impl system::Trait for Test {
 	type AccountId = u64;
 	type Lookup = IdentityLookup<Self::AccountId>;
 	type Header = Header;
-	type Event = ();
+	type Event = TestEvent;
 	type BlockHashCount = BlockHashCount;
 	type MaximumBlockWeight = MaximumBlockWeight;
 	type DbWeight = ();
@@ -54,13 +65,17 @@ parameter_types! {
 }
 
 impl Trait for Test {
-	type Event = ();
+	type Event = TestEvent;
 	type StringLimit = StringLimit;
 }
 
 pub type KVStore = Module<Test>;
+pub type System = system::Module<Test>;
 
 // Build genesis storage according to the mock runtime.
 pub fn new_test_ext() -> sp_io::TestExternalities {
-	system::GenesisConfig::default().build_storage::<Test>().unwrap().into()
+	let storage = system::GenesisConfig::default().build_storage::<Test>().unwrap();
+	let mut ext = sp_io::TestExternalities::from(storage);
+	ext.execute_with(|| System::set_block_number(1));
+	ext
 }

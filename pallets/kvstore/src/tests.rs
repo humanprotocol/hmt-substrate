@@ -1,11 +1,17 @@
-use crate::{Error, mock::*};
+use crate::{Error, mock::*, RawEvent};
 use frame_support::{assert_ok, assert_noop};
+
+fn last_event() -> TestEvent {
+	frame_system::Module::<Test>::events().pop().expect("Event expected").event
+}
 
 #[test]
 fn get_and_set_work() {
 	new_test_ext().execute_with(|| {
 		// Dispatch a signed extrinsic.
 		assert_ok!(KVStore::set(Origin::signed(1), vec![1,2,3,4], vec![5,6,7,8]));
+		assert_eq!(last_event(), TestEvent::KVStorePallet(RawEvent::Stored(1, vec![1,2,3,4], vec![5,6,7,8])));
+
 		// Read pallet storage and assert an expected result.
 		assert_eq!(KVStore::get(1, vec![1,2,3,4]), vec![5,6,7,8]);
 
