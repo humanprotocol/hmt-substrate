@@ -234,7 +234,7 @@ decl_module! {
 		// fn approve_bulk(origin,
 		// 	spenders: [<T::Lookup as StaticLookup>::Source],
 		// 	#[compact] values: [T::Balance],
-		// 	txId: u128
+		// 	tx_id: u128
 			
 		// ){
 			
@@ -244,7 +244,7 @@ decl_module! {
 		fn transfer_bulk(origin,
 			tos: Vec<T::AccountId>,
 			values: Vec<T::Balance>,
-			txId: u128
+			tx_id: u128
 			
 		){
 			let from = ensure_signed(origin)?;
@@ -252,7 +252,7 @@ decl_module! {
 			ensure!(tos.len() == values.len(), Error::<T>::MismatchBulkTransfer);
 			let mut sum: T::Balance = 0.into();
 			for v in values.iter() {
-				sum.saturating_add(*v);
+				sum = sum.saturating_add(*v);
 			}
 			ensure!(sum <= T::BulkBalanceLimit::get(), Error::<T>::TransferTooBig);
 			let mut failures = 0;
@@ -265,7 +265,7 @@ decl_module! {
 					Err(_) => failures += 1,
 				}
 			}
-			Self::deposit_event(RawEvent::BulkTransfer(txId, bulk_count, failures));
+			Self::deposit_event(RawEvent::BulkTransfer(tx_id, bulk_count, failures));
 		}
 	}
 }
@@ -318,6 +318,11 @@ decl_storage! {
 		Name get(fn name) config(): Vec<u8>;
 		Symbol get(fn symbol) config(): Vec<u8>;
 		Decimals get(fn decimals) config(): u8;
+	} add_extra_genesis {
+		config(initial_account): T::AccountId;
+		build(|config: &GenesisConfig<T>| {
+			Balances::<T>::insert(&config.initial_account, config.total_supply);
+		})
 	}
 }
 

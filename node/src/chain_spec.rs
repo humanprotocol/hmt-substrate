@@ -151,13 +151,14 @@ fn testnet_genesis(
 		}),
 		pallet_sudo: Some(SudoConfig {
 			// Assign network admin rights.
-			key: root_key,
+			key: root_key.clone(),
 		}),
 		pallet_hmtoken: Some(HMTokenConfig {
-			total_supply: 10000000000,
+			total_supply: 1_000_000_000_000_000_000_000,
 			name: b"Human Protocol Token".to_vec(),
-			symbol: b"HPT".to_vec(),
-			decimals: 12
+			symbol: b"HMT".to_vec(),
+			decimals: 15, // ignored in the UI for now
+			initial_account: root_key,
 		})
 	}
 }
