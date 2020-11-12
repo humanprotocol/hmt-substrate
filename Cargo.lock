@@ -3540,6 +3540,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-hmtoken"
+version = "2.0.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "parity-scale-codec",
+ "serde",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
 name = "pallet-kvstore"
 version = "2.0.0"
 dependencies = [
