@@ -274,8 +274,7 @@ impl pallet_kvstore::Trait for Runtime {
 
 parameter_types! {
 	pub const BulkAccountsLimit: usize = 100;
-	pub const BulkBalanceLimit: Balance = 1_000_000_000_000_000_000;
-
+	pub const BulkBalanceLimit: Balance = 1_000_000_000 * 1_000_000_000_000_000;
 }
 
 impl pallet_hmtoken::Trait for Runtime {
