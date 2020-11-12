@@ -41,6 +41,7 @@ pub use frame_support::{
 /// Import the template pallet.
 pub use pallet_template;
 pub use pallet_kvstore;
+pub use pallet_hmtoken;
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -266,10 +267,22 @@ parameter_types! {
 	pub const StringLimit: usize = 1000;
 }
 
-/// Configure the template pallet in pallets/template.
 impl pallet_kvstore::Trait for Runtime {
 	type Event = Event;
 	type StringLimit = StringLimit;
+}
+
+parameter_types! {
+	pub const BulkAccountsLimit: usize = 1000;
+	pub const BulkBalanceLimit: Balance = 1000;
+
+}
+
+impl pallet_hmtoken::Trait for Runtime {
+	type Event = Event;
+	type Balance = Balance;
+	type BulkAccountsLimit = BulkAccountsLimit;
+	type BulkBalanceLimit = BulkBalanceLimit;
 }
 
 /// Configure the template pallet in pallets/template.
@@ -295,6 +308,7 @@ construct_runtime!(
 		// Include the custom logic from the template pallet in the runtime.
 		TemplateModule: pallet_template::{Module, Call, Storage, Event<T>},
 		KVStore: pallet_kvstore::{Module, Call, Storage, Event<T>},
+		HMToken: pallet_hmtoken::{Module, Call, Storage, Event<T>, Config<T>},
 	}
 );
 

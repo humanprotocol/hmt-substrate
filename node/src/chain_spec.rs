@@ -1,6 +1,6 @@
 use sp_core::{Pair, Public, sr25519};
 use node_template_runtime::{
-	AccountId, AuraConfig, BalancesConfig, GenesisConfig, GrandpaConfig,
+	AccountId, AuraConfig, BalancesConfig, GenesisConfig, GrandpaConfig, HMTokenConfig,
 	SudoConfig, SystemConfig, WASM_BINARY, Signature
 };
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -153,5 +153,11 @@ fn testnet_genesis(
 			// Assign network admin rights.
 			key: root_key,
 		}),
+		pallet_hmtoken: Some(HMTokenConfig {
+			total_supply: 10000000000,
+			name: b"Human Protocol Token".to_vec(),
+			symbol: b"HPT".to_vec(),
+			decimals: 12
+		})
 	}
 }

@@ -134,7 +134,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use frame_support::{Parameter, decl_module, decl_event, decl_storage, decl_error, ensure};
-use frame_support::traits::Get;
+use frame_support::traits::{Get, Vec};
 use frame_support::dispatch;
 use sp_runtime::traits::{Member, AtLeast32Bit, AtLeast32BitUnsigned, Zero, StaticLookup, Saturating};
 use frame_system::ensure_signed;
@@ -314,8 +314,10 @@ decl_storage! {
 		// 	double_map hasher(twox_64_concat) T::AccountId, hasher(blake2_128_concat) T::AccountId => T::Balance; 
 
 		/// The total unit supply of the asset.
-		TotalSupply get(fn total_supply): T::Balance;
-		
+		TotalSupply get(fn total_supply) config(): T::Balance;
+		Name get(fn name) config(): Vec<u8>;
+		Symbol get(fn symbol) config(): Vec<u8>;
+		Decimals get(fn decimals) config(): u8;
 	}
 }
 

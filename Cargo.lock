@@ -3278,6 +3278,7 @@ dependencies = [
  "pallet-aura",
  "pallet-balances",
  "pallet-grandpa",
+ "pallet-hmtoken",
  "pallet-kvstore",
  "pallet-randomness-collective-flip",
  "pallet-sudo",
