@@ -148,6 +148,8 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+mod benchmarks;
+
 /// The module configuration trait.
 pub trait Trait: frame_system::Trait {
     /// The overarching event type.
