@@ -31,6 +31,7 @@ sp-runtime = { default-features = false, version = '2.0.0' }
 default = ['std']
 std = [
     'codec/std',
+    "frame-benchmarking/std",
     'frame-support/std',
     'frame-system/std',
     'sp-std/std',
