@@ -1,0 +1,43 @@
+{
+  "recording_oracle_addr": "0x6a0E68eA5F706339dd6bd354F53EfcB5B9e53E49",
+  "reputation_oracle_addr": "0x6a0E68eA5F706339dd6bd354F53EfcB5B9e53E49",
+  "requester_accuracy_target": 0.8,
+  "job_mode": "batch",
+  "confcalc_configuration_id": "experiment_landmark_kde_hard",
+  "restricted_audience": {
+    "sitekey": [
+      {
+        "34e118f0-756d-4bee-9ff4-02cbf8c3ec41": {
+          "score": 1
+        }
+      }
+    ]
+  },
+  "requester_max_repeats": 5,
+  "requester_min_repeats": 4,
+  "requester_question_example": [
+    "https://temple-gates.hcaptcha.com/landmark/s01/01.jpg",
+    "https://temple-gates.hcaptcha.com/landmark/s01/02.jpg",
+    "https://temple-gates.hcaptcha.com/landmark/s01/03.jpg"
+  ],
+  "reputation_agent_addr": "0x6a0E68eA5F706339dd6bd354F53EfcB5B9e53E49",
+  "groundtruth_uri": "https://s3-us-west-2.amazonaws.com/temple-gates.hcaptcha.com/landmark/landmark_multi_click_test.gtconf_3.imgs_750.gt.json",
+  "request_type": "image_label_area_select",
+  "oracle_stake": 0.05,
+  "request_config": {
+    "shape_type": "point",
+    "min_shapes_per_image": 1,
+    "max_shapes_per_image": 4
+  },
+  "requester_question": {
+    "en": "Please click on the eyes and mouth in each image."
+  },
+  "taskdata_uri": "https://s3-us-west-2.amazonaws.com/temple-gates.hcaptcha.com/landmark/landmark_multi_click_test.gtconf_3.imgs_750.tasklist.json",
+  "task_bid_price": "0.000064",
+  "requester_restricted_answer_set": {
+    "0": {
+      "en": "nose_eyes"
+    }
+  },
+  "job_total_tasks": 750
+}
