@@ -285,6 +285,7 @@ impl pallet_hmtoken::Trait for Runtime {
 	type Balance = Balance;
 	type BulkAccountsLimit = BulkAccountsLimit;
 	type BulkBalanceLimit = BulkBalanceLimit;
+	type WeightInfo = weights::pallet_hmtoken::WeightInfo;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -494,6 +495,7 @@ impl_runtime_apis! {
 			add_benchmark!(params, batches, pallet_balances, Balances);
 			add_benchmark!(params, batches, pallet_timestamp, Timestamp);
 			add_benchmark!(params, batches, pallet_kvstore, KVStore);
+			add_benchmark!(params, batches, pallet_hmtoken, HMToken);
 
 			if batches.is_empty() { return Err("Benchmark not found for this pallet.".into()) }
 			Ok(batches)
