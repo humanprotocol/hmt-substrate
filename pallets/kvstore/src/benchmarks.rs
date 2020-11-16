@@ -1,10 +1,11 @@
 #![cfg(feature = "runtime-benchmarks")]
 
 use super::*;
+use sp_std::prelude::*;
+
 use codec::Encode;
 use frame_system::{RawOrigin, EventRecord};
 use frame_benchmarking::{benchmarks, whitelisted_caller};
-use sp_std::prelude::*;
 use crate::Module as KVStore;
 
 fn assert_last_event<T: Trait>(generic_event: <T as Trait>::Event) {
@@ -29,6 +30,7 @@ benchmarks! {
 
 	} : set(RawOrigin::Signed(caller.clone()), key.clone(), value.clone())
 	verify {
+		assert_eq!(KVStore::<T>::get(&caller, &key), value);
 		assert_last_event::<T>(RawEvent::Stored(caller, key, value).into())
 	}
 
@@ -38,7 +40,7 @@ benchmarks! {
 mod tests {
 	use super::*;
 	use crate::mock::{Test, new_test_ext};
-		use frame_support::assert_ok;
+	use frame_support::assert_ok;
 		
 		#[test]
 		fn test_KVStore() {

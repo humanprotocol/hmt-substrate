@@ -135,9 +135,8 @@
 
 use frame_support::dispatch;
 use frame_support::traits::{Get, Vec};
-use frame_support::{decl_error, decl_event, decl_module, decl_storage, ensure, Parameter};
+use frame_support::{decl_error, decl_event, decl_module, decl_storage, ensure, Parameter, weights::Weight};
 use frame_system::ensure_signed;
-use sp_runtime::traits::One;
 use sp_runtime::traits::{
     AtLeast32Bit, AtLeast32BitUnsigned, Member, Saturating, StaticLookup, Zero,
 };
@@ -147,6 +146,8 @@ mod mock;
 
 #[cfg(test)]
 mod tests;
+
+mod benchmarks;
 
 /// The module configuration trait.
 pub trait Trait: frame_system::Trait {
@@ -158,6 +159,12 @@ pub trait Trait: frame_system::Trait {
 
     type BulkAccountsLimit: Get<usize>;
     type BulkBalanceLimit: Get<Self::Balance>;
+    type WeightInfo: WeightInfo;
+}
+
+pub trait WeightInfo {
+	fn transfer() -> Weight;
+	fn transfer_bulk(a: u32, ) -> Weight;
 }
 
 decl_module! {
