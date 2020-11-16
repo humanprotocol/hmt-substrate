@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use sp_std::prelude::*;
-use frame_support::{decl_module, decl_storage, decl_event, decl_error, dispatch, ensure, traits::Get};
+use frame_support::{decl_module, decl_storage, decl_event, decl_error, dispatch, ensure, weights::Weight, traits::Get};
 use frame_system::ensure_signed;
 
 #[cfg(test)]
@@ -10,9 +10,16 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+mod benchmarks;
+
 pub trait Trait: frame_system::Trait {
 	type Event: From<Event<Self>> + Into<<Self as frame_system::Trait>::Event>;
 	type StringLimit: Get<usize>;
+	type WeightInfo: WeightInfo;
+}
+
+pub trait WeightInfo {
+	fn set(k: u32, v: u32) -> Weight;
 }
 
 decl_storage! {
@@ -49,8 +56,7 @@ decl_module! {
 		fn deposit_event() = default;
 
 		/// Set the `value` under the sender's account id and `key`.
-		// TODO: determine weight
-		#[weight = 10_000 + T::DbWeight::get().writes(1)]
+		#[weight = T::WeightInfo::set(key.len() as u32, value.len() as u32)]
 		pub fn set(origin, key: Vec<u8>, value: Vec<u8>) -> dispatch::DispatchResult {
 			let acc = ensure_signed(origin)?;
 
