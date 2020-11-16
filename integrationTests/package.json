@@ -1,0 +1,15 @@
+{
+  "name": "integrationTests",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "halva-cli test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "halva-cli": "^0.3.3"
+  }
+}
