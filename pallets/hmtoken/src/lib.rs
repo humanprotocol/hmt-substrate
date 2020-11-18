@@ -254,26 +254,9 @@ decl_module! {
             tos: Vec<T::AccountId>,
             values: Vec<T::Balance>,
             tx_id: u128
-
         ){
             let from = ensure_signed(origin)?;
-            ensure!(tos.len() <= T::BulkAccountsLimit::get(), Error::<T>::TooManyTos);
-            ensure!(tos.len() == values.len(), Error::<T>::MismatchBulkTransfer);
-            let mut sum: T::Balance = 0.into();
-            for v in values.iter() {
-                sum = sum.saturating_add(*v);
-            }
-            ensure!(sum <= T::BulkBalanceLimit::get(), Error::<T>::TransferTooBig);
-            let mut failures = 0;
-            let mut bulk_count = 0;
-            //TODO seem difficult for debugging which txs failed if they do
-            for (to, value) in tos.into_iter().zip(values.into_iter()) {
-                let result = Self::do_transfer(from.clone(), to, value);
-                match result {
-                    Ok(()) => bulk_count += 1,
-                    Err(_) => failures += 1,
-                }
-            }
+            let (bulk_count, failures) = Self::do_transfer_bulk(from, tos, values)?;
             Self::deposit_event(RawEvent::BulkTransfer(tx_id, bulk_count, failures));
         }
     }
@@ -353,7 +336,29 @@ impl<T: Trait> Module<T> {
         Ok(())
     }
 
-    // pub fn approved_amount() -> T::Balance {
-
-    // }
+    pub fn do_transfer_bulk(
+        from: T::AccountId,
+        tos: Vec<T::AccountId>,
+        values: Vec<T::Balance>,
+    ) -> Result<(u32, u32), dispatch::DispatchError>
+    {
+        ensure!(tos.len() <= T::BulkAccountsLimit::get(), Error::<T>::TooManyTos);
+        ensure!(tos.len() == values.len(), Error::<T>::MismatchBulkTransfer);
+        let mut sum: T::Balance = 0.into();
+        for v in values.iter() {
+            sum = sum.saturating_add(*v);
+        }
+        ensure!(sum <= T::BulkBalanceLimit::get(), Error::<T>::TransferTooBig);
+        let mut failures = 0;
+        let mut bulk_count = 0;
+        //TODO seem difficult for debugging which txs failed if they do
+        for (to, value) in tos.into_iter().zip(values.into_iter()) {
+            let result = Self::do_transfer(from.clone(), to, value);
+            match result {
+                Ok(()) => bulk_count += 1,
+                Err(_) => failures += 1,
+            }
+        }
+        Ok((bulk_count, failures))
+    }
 }

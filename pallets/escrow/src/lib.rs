@@ -2,10 +2,9 @@
 
 use sp_std::prelude::*;
 use codec::{Encode, Decode};
-use frame_support::{decl_error, decl_event, decl_module, ensure, decl_storage, dispatch::{DispatchError}, traits::Get};
+use frame_support::{decl_error, decl_event, decl_module, ensure, decl_storage, dispatch, traits::Get};
 use frame_system::ensure_signed;
-use sp_runtime::traits::Hash;
-
+use sp_runtime::{Percent, traits::{Hash, Saturating}};
 
 // #[cfg(test)]
 // mod mock;
@@ -18,7 +17,6 @@ use pallet_timestamp as timestamp;
 
 pub type EscrowId = u128;
 
-// TODO check the size of the urls and hash
 #[derive(Encode, Decode)]
 pub struct EscrowInfo<Moment, AccountId> {
 	status: EscrowStatus,
@@ -27,8 +25,8 @@ pub struct EscrowInfo<Moment, AccountId> {
 	manifest_hash: Vec<u8>,
 	reputation_oracle: AccountId,
 	recording_oracle: AccountId,
-	reputation_oracle_stake: u128,
-	recording_oracle_stake: u128,
+	reputation_oracle_stake: Percent,
+	recording_oracle_stake: Percent,
 	canceller: AccountId,
 	escrow_address: AccountId,
 }
@@ -59,16 +57,16 @@ decl_storage! {
 }
 
 decl_event!(
-	pub enum Event<T>
-	where
-		AccountId = <T as frame_system::Trait>::AccountId
-		{
-			/// The escrow was launched \[escrow_id, canceller\]
-			Launched(EscrowId, AccountId),
-			/// The escrow is in Pending status \[escrow_id, manifest_url, manifest_hash\]
-			Pending(EscrowId, Vec<u8>, Vec<u8>),
-			IntermediateStorage(EscrowId, Vec<u8>, Vec<u8>)
-		}
+	pub enum Event<T> where
+		<T as frame_system::Trait>::AccountId,
+	{
+		/// The escrow is in Pending status \[escrow_id, creator, canceller, manifest_url, manifest_hash\]
+		Pending(EscrowId, AccountId, AccountId, Vec<u8>, Vec<u8>),
+		IntermediateStorage(EscrowId, Vec<u8>, Vec<u8>),
+		BulkPayoutAborted,
+		/// Bulk payout was executed. Completion indicated by the boolean
+		BulkPayout(bool),
+	}
 );
 
 decl_error! {
@@ -82,6 +80,7 @@ decl_error! {
 		OutOfFunds,
 		EscrowExpired,
 		EscrowNotPaid,
+		EscrowClosed,
 	}
 }
  
@@ -99,13 +98,17 @@ decl_module! {
 			manifest_hash: Vec<u8>, 
 			reputation_oracle: T::AccountId, 
 			recording_oracle: T::AccountId, 
-			reputation_oracle_stake: u128, 
-			recording_oracle_stake: u128) {
-
+			reputation_oracle_stake: Percent, 
+			recording_oracle_stake: Percent,
+		) {
 			let who = ensure_signed(origin)?;
-			let total_stake = reputation_oracle_stake.checked_add(recording_oracle_stake).ok_or(Error::<T>::Overflow)?;
+			let reputation_copy = reputation_oracle_stake;
+			let recording_copy = recording_oracle_stake;
+			// This is fine as `100 + 100 < 256` so no chance of overflow.
+			let total_stake = reputation_copy.deconstruct().saturating_add(recording_copy.deconstruct());
 			ensure!(total_stake <= 100, Error::<T>::StakeOutOfBounds);
 			let end_time = <timestamp::Module<T>>::get() + T::StandardDuration::get();
+			// TODO check/limit the size of the url and hash
 			let id = Counter::get();
 			let mut data = vec![];
 			data.extend(id.encode());
@@ -127,10 +130,10 @@ decl_module! {
 			};
 			Counter::set(id + 1);
 			<Escrow<T>>::insert(id, new_escrow);
-			let mut trusted = vec![recording_oracle, reputation_oracle, canceller, who];
+			let mut trusted = vec![recording_oracle, reputation_oracle, canceller.clone(), who.clone()];
 			trusted.extend(handlers);
 			Self::add_trusted_handlers(id, trusted);
-			Self::deposit_event(RawEvent::Pending(id, manifest_url, manifest_hash));
+			Self::deposit_event(RawEvent::Pending(id, who, canceller, manifest_url, manifest_hash));
 		}
 
 		#[weight = 0]
@@ -173,12 +176,62 @@ decl_module! {
 		}
 
 		#[weight = 0]
-		fn store_results(origin, url: Vec<u8>, hash: Vec<u8>){
+		fn store_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
 			let who = ensure_signed(origin)?;
+			let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 			ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
 			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
-			ensure!(escrow.status == EscrowStatus::Pending || escrow.status == EscrowStatus::partial, Error::<T>::EscrowClosed);
+			ensure!(escrow.status == EscrowStatus::Pending || escrow.status == EscrowStatus::Partial, Error::<T>::EscrowClosed);
 			Self::deposit_event(RawEvent::IntermediateStorage(id, url, hash));
+		}
+
+		#[weight = 0]
+		fn bulk_payout(origin,
+			id: EscrowId,
+			recipients: Vec<T::AccountId>,
+			amounts: Vec<T::Balance>,
+			url: Vec<u8>,
+			hash: Vec<u8>,
+			tx_id: u128
+		) {
+			let who = ensure_signed(origin)?;
+			let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
+			ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
+			ensure!(Self::is_trusted_handler(id, &who), Error::<T>::NonTrustedAccount);
+			let balance = Self::get_balance(&escrow);
+			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
+			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
+
+			let mut sum: T::Balance = 0.into();
+            for a in amounts.iter() {
+                sum = sum.saturating_add(*a);
+			}
+			if balance < sum {
+				Self::deposit_event(RawEvent::BulkPayoutAborted);
+				return Ok(());
+			}
+			if url.len() > 0 || hash.len() > 0 {
+				// TODO: Store results as event like intermediate or in escrow storage?
+			}
+			let (reputation_fee, recording_fee, final_amounts) = Self::finalize_payouts(&escrow, &amounts);
+
+			let (_, failures) = hmtoken::Module::<T>::do_transfer_bulk(who, recipients, final_amounts)?;
+			let mut bulk_paid = false;
+			if failures == 0 {
+				let address = escrow.escrow_address.clone();
+				// TODO: It seems easy to end up in inconsistent states. --> clarify requirements
+				bulk_paid = hmtoken::Module::<T>::do_transfer(address.clone(), escrow.reputation_oracle.clone(), reputation_fee).is_ok() && hmtoken::Module::<T>::do_transfer(address.clone(), escrow.recording_oracle.clone(), recording_fee).is_ok();
+			}
+			let balance = Self::get_balance(&escrow);
+			if bulk_paid {
+				if escrow.status == EscrowStatus::Pending {
+					escrow.status = EscrowStatus::Partial;
+				}
+				if balance == 0.into() && escrow.status == EscrowStatus::Partial {
+					escrow.status = EscrowStatus::Paid;
+				}
+			}
+			Self::deposit_event(RawEvent::BulkPayout(bulk_paid));
 		}
 	}
 }
@@ -192,5 +245,22 @@ impl<T: Trait> Module<T> {
 
 	pub fn get_balance(target_escrow: &EscrowInfo<T::Moment, T::AccountId>) -> T::Balance {
 		hmtoken::Module::<T>::balance(target_escrow.escrow_address.clone())
+	}
+
+	fn finalize_payouts(escrow: &EscrowInfo<T::Moment, T::AccountId>, amounts: &Vec<T::Balance>) -> (T::Balance, T::Balance, Vec<T::Balance>) {
+		let mut reputation_fee_total: T::Balance = 0.into();
+		let reputation_stake = escrow.reputation_oracle_stake;
+		let mut recording_fee_total: T::Balance = 0.into();
+		let recording_stake = escrow.recording_oracle_stake;
+		let final_amounts = amounts.iter().map(|amount| {
+			// TODO: unclear whether this math is safe and has the intended semantics.
+			let reputation_fee = reputation_stake.mul_floor(*amount);
+			let recording_fee = recording_stake.mul_floor(*amount);
+			let amount_without_fee = amount.saturating_sub(reputation_fee).saturating_sub(recording_fee);
+			reputation_fee_total = reputation_fee_total.saturating_add(reputation_fee);
+			recording_fee_total = recording_fee_total.saturating_add(recording_fee);
+			amount_without_fee
+		}).collect();
+		(reputation_fee_total, recording_fee_total, final_amounts)
 	}
 }
