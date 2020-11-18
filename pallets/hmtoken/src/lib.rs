@@ -317,16 +317,16 @@ decl_error! {
 decl_storage! {
     trait Store for Module<T: Trait> as HMToken {
         /// The number of units of assets held by any given account.
-        Balances get(fn balance): map hasher(blake2_128_concat) T::AccountId => T::Balance;
+        pub Balances get(fn balance): map hasher(blake2_128_concat) T::AccountId => T::Balance;
 
         // Approve get(fn approved_amount):
         // 	double_map hasher(twox_64_concat) T::AccountId, hasher(blake2_128_concat) T::AccountId => T::Balance;
 
         /// The total unit supply of the asset.
-        TotalSupply get(fn total_supply) config(): T::Balance;
-        Name get(fn name) config(): Vec<u8>;
-        Symbol get(fn symbol) config(): Vec<u8>;
-        Decimals get(fn decimals) config(): u8;
+        pub TotalSupply get(fn total_supply) config(): T::Balance;
+        pub Name get(fn name) config(): Vec<u8>;
+        pub Symbol get(fn symbol) config(): Vec<u8>;
+        pub Decimals get(fn decimals) config(): u8;
     } add_extra_genesis {
         config(initial_account): T::AccountId;
         build(|config: &GenesisConfig<T>| {
