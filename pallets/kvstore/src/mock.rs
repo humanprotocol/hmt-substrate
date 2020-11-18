@@ -1,4 +1,4 @@
-use crate::{Module, Trait};
+use crate::{Module, Trait, WeightInfo};
 use sp_core::H256;
 use frame_support::{impl_outer_event, impl_outer_origin, parameter_types, weights::Weight};
 use sp_runtime::{
@@ -64,9 +64,15 @@ parameter_types! {
 	pub const StringLimit: usize = 50;
 }
 
+pub struct MockWeightInfo;
+impl WeightInfo for MockWeightInfo {
+    fn set(_: u32, _: u32) -> Weight { 0 }
+}
+
 impl Trait for Test {
 	type Event = TestEvent;
 	type StringLimit = StringLimit;
+	type WeightInfo = MockWeightInfo;
 }
 
 pub type KVStore = Module<Test>;

@@ -1,4 +1,4 @@
-use crate::{Module, Trait};
+use crate::{Module, Trait, WeightInfo};
 use frame_support::{impl_outer_event, impl_outer_origin, parameter_types, weights::Weight};
 use frame_system as system;
 use sp_core::H256;
@@ -68,11 +68,18 @@ parameter_types! {
 
 }
 
+pub struct MockWeightInfo;
+impl WeightInfo for MockWeightInfo {
+    fn transfer() -> Weight { 0 }
+	fn transfer_bulk(a: u32, ) -> Weight { 0 }
+}
+
 impl Trait for Test {
     type Event = TestEvent;
     type Balance = u128;
     type BulkAccountsLimit = BulkAccountsLimit;
     type BulkBalanceLimit = BulkBalanceLimit;
+    type WeightInfo = MockWeightInfo;
 }
 
 pub type HMToken = Module<Test>;
