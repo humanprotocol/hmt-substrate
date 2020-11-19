@@ -86,7 +86,7 @@ fn it_creates_escrow_instance() {
 }
 
 #[test]
-fn abort_works() {
+fn abort_positive_tests() {
 	new_test_ext().execute_with(|| {
 		let sender = 1;
 		let handlers = vec![1, 2];
@@ -101,3 +101,44 @@ fn abort_works() {
 
 	});
 }
+#[test]
+fn abort_negative_tests() {
+	new_test_ext().execute_with(|| {
+		let sender = 1;
+		let handlers = vec![1, 2];
+		let escrow = create_base_escrow(0, sender, handlers);
+		assert_noop!(Escrow::abort(Origin::signed(8), 0), Error::<Test>::NonTrustedAccount);
+		assert_noop!(Escrow::abort(Origin::signed(1), 2), Error::<Test>::MissingEscrow);
+		assert_noop!(Escrow::abort(Origin::signed(1), 0), Error::<Test>::OutOfFunds);
+
+		//TODO add tests for escrow status complete and paid
+	
+	});
+}
+
+#[test]
+fn cancel_positive_tests() {
+	new_test_ext().execute_with(|| {
+		let sender = 1;
+		let handlers = vec![1, 2];
+		let escrow = create_base_escrow(0, sender, handlers);
+		assert_ok!(HmToken::transfer(Origin::signed(1), escrow.escrow_address, 100));
+		assert_ok!(Escrow::cancel(Origin::signed(1), 0));
+		assert_eq!(Escrow::escrow(0).unwrap().status, EscrowStatus::Cancelled);		
+	});
+}	
+
+#[test]
+fn cancel_negative_tests() {
+	new_test_ext().execute_with(|| {
+		let sender = 1;
+		let handlers = vec![1, 2];
+		let escrow = create_base_escrow(0, sender, handlers);
+		assert_noop!(Escrow::cancel(Origin::signed(8), 0), Error::<Test>::NonTrustedAccount);
+		assert_noop!(Escrow::cancel(Origin::signed(1), 2), Error::<Test>::MissingEscrow);
+		assert_noop!(Escrow::cancel(Origin::signed(1), 0), Error::<Test>::OutOfFunds);
+
+		//TODO add tests for escrow status complete and paid
+		
+	});
+}	

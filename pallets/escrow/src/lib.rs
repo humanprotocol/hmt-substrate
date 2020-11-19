@@ -142,8 +142,8 @@ decl_module! {
 		#[weight = 0]
 		fn abort(origin, id: EscrowId) {
 			let who = ensure_signed(origin)?;
-			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
 			let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
+			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
 			ensure!(escrow.status != EscrowStatus::Complete, Error::<T>::AlreadyComplete);
 			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 			let balance = Self::get_balance(&escrow);
@@ -155,8 +155,8 @@ decl_module! {
 		#[weight = 0]
 		fn cancel(origin, id: EscrowId) {
 			let who = ensure_signed(origin)?;
-			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
 			let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
+			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
 			ensure!(escrow.status != EscrowStatus::Complete, Error::<T>::AlreadyComplete);
 			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 			let balance = Self::get_balance(&escrow);
