@@ -167,6 +167,12 @@ pub trait WeightInfo {
 	fn transfer_bulk(a: u32, ) -> Weight;
 }
 
+/// Implement WeightInfo for the unit type for easy mocking/testing
+impl WeightInfo for () {
+    fn transfer() -> Weight { 0 }
+	fn transfer_bulk(a: u32, ) -> Weight { 0 }
+}
+
 decl_module! {
     pub struct Module<T: Trait> for enum Call where origin: T::Origin {
         type Error = Error<T>;
@@ -182,7 +188,7 @@ decl_module! {
         /// - 1 event.
         /// # </weight>
         #[weight = 0]
-        fn transfer(origin,
+        pub fn transfer(origin,
             to: <T::Lookup as StaticLookup>::Source,
             #[compact] value: T::Balance
         ) {

@@ -68,18 +68,12 @@ parameter_types! {
 
 }
 
-pub struct MockWeightInfo;
-impl WeightInfo for MockWeightInfo {
-    fn transfer() -> Weight { 0 }
-	fn transfer_bulk(a: u32, ) -> Weight { 0 }
-}
-
 impl Trait for Test {
     type Event = TestEvent;
     type Balance = u128;
     type BulkAccountsLimit = BulkAccountsLimit;
     type BulkBalanceLimit = BulkBalanceLimit;
-    type WeightInfo = MockWeightInfo;
+    type WeightInfo = ();
 }
 
 pub type HMToken = Module<Test>;

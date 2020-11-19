@@ -6,18 +6,18 @@ use frame_support::{decl_error, decl_event, decl_module, ensure, decl_storage, d
 use frame_system::ensure_signed;
 use sp_runtime::{Percent, traits::{Hash, Saturating}};
 
-// #[cfg(test)]
-// mod mock;
+#[cfg(test)]
+mod mock;
 
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;
 
 use pallet_hmtoken as hmtoken;
 use pallet_timestamp as timestamp;
 
 pub type EscrowId = u128;
 
-#[derive(Encode, Decode)]
+#[derive(Clone, Encode, Decode, Debug, PartialEq, Eq)]
 pub struct EscrowInfo<Moment, AccountId> {
 	status: EscrowStatus,
 	end_time: Moment,
@@ -31,7 +31,7 @@ pub struct EscrowInfo<Moment, AccountId> {
 	escrow_address: AccountId,
 }
 
-#[derive(Encode, Decode, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Encode, Decode, PartialEq, Eq)]
 pub enum EscrowStatus {
 	Pending,
 	Partial,
@@ -40,16 +40,26 @@ pub enum EscrowStatus {
 	Cancelled,
 }
 
+pub fn generate_account_id<T: Trait>(id: EscrowId, url: Vec<u8>, hash: Vec<u8>) -> T::AccountId {
+	let mut data = vec![];
+	data.extend(id.encode());
+	data.extend(url);
+	data.extend(hash);
+	let data_hash = T::Hashing::hash(&data);
+	T::AccountId::decode(&mut data_hash.as_ref()).unwrap_or_default()
+}
+
 pub trait Trait: frame_system::Trait + timestamp::Trait + hmtoken::Trait {
 	type Event: From<Event<Self>> + Into<<Self as frame_system::Trait>::Event>;
 	type StandardDuration: Get<Self::Moment>;
+	type StringLimit: Get<usize>;
 }
 
 decl_storage! {
 	trait Store for Module<T: Trait> as Escrow {
 		Escrow get(fn escrow): map hasher(twox_64_concat) EscrowId => Option<EscrowInfo<T::Moment, T::AccountId>>;
 		
-		Counter: EscrowId;
+		Counter get(fn counter): EscrowId;
 
 		TrustedHandler get(fn is_trusted_handler):
 			double_map hasher(twox_64_concat) EscrowId, hasher(twox_64_concat) T::AccountId => bool;
@@ -92,30 +102,23 @@ decl_module! {
 
 		#[weight = 0]
 		pub fn create(origin,
-			canceller: T::AccountId, 
-			handlers: Vec<T::AccountId>, 
-			manifest_url: Vec<u8>, 
-			manifest_hash: Vec<u8>, 
-			reputation_oracle: T::AccountId, 
-			recording_oracle: T::AccountId, 
-			reputation_oracle_stake: Percent, 
+			canceller: T::AccountId,
+			handlers: Vec<T::AccountId>,
+			manifest_url: Vec<u8>,
+			manifest_hash: Vec<u8>,
+			reputation_oracle: T::AccountId,
+			recording_oracle: T::AccountId,
+			reputation_oracle_stake: Percent,
 			recording_oracle_stake: Percent,
 		) {
 			let who = ensure_signed(origin)?;
-			let reputation_copy = reputation_oracle_stake;
-			let recording_copy = recording_oracle_stake;
 			// This is fine as `100 + 100 < 256` so no chance of overflow.
-			let total_stake = reputation_copy.deconstruct().saturating_add(recording_copy.deconstruct());
+			let total_stake = reputation_oracle_stake.deconstruct().saturating_add(recording_oracle_stake.deconstruct());
 			ensure!(total_stake <= 100, Error::<T>::StakeOutOfBounds);
 			let end_time = <timestamp::Module<T>>::get() + T::StandardDuration::get();
 			// TODO check/limit the size of the url and hash
 			let id = Counter::get();
-			let mut data = vec![];
-			data.extend(id.encode());
-			data.extend(manifest_url.clone());
-			data.extend(manifest_hash.clone());
-			let data_hash = T::Hashing::hash(&data);
-			let escrow_address = T::AccountId::decode(&mut data_hash.as_ref()).unwrap_or_default();
+			let escrow_address = generate_account_id::<T>(id, manifest_url.clone(), manifest_hash.clone());
 			let new_escrow = EscrowInfo {
 				status: EscrowStatus::Pending,
 				end_time,

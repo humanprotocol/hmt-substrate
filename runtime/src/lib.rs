@@ -38,10 +38,10 @@ pub use frame_support::{
 	},
 };
 
-/// Import the template pallet.
-pub use pallet_template;
-pub use pallet_kvstore;
+/// Import the pallets.
+pub use pallet_escrow;
 pub use pallet_hmtoken;
+pub use pallet_kvstore;
 
 mod weights;
 
@@ -70,6 +70,9 @@ pub type Hash = sp_core::H256;
 
 /// Digest item type.
 pub type DigestItem = generic::DigestItem<Hash>;
+
+/// Define type for timestamps.
+pub type Moment = u64;
 
 /// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
 /// the specifics of the runtime. They can then be made to be agnostic over specific formats
@@ -225,7 +228,7 @@ parameter_types! {
 
 impl pallet_timestamp::Trait for Runtime {
 	/// A timestamp: milliseconds since the unix epoch.
-	type Moment = u64;
+	type Moment = Moment;
 	type OnTimestampSet = Aura;
 	type MinimumPeriod = MinimumPeriod;
 	type WeightInfo = ();
@@ -288,6 +291,16 @@ impl pallet_hmtoken::Trait for Runtime {
 	type WeightInfo = weights::pallet_hmtoken::WeightInfo;
 }
 
+parameter_types! {
+	pub const StandardDuration: Moment = 8_640_000;
+}
+
+impl pallet_escrow::Trait for Runtime {
+	type Event = Event;
+	type StandardDuration = StandardDuration;
+	type StringLimit = StringLimit;
+}
+
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
 	pub enum Runtime where
@@ -305,6 +318,7 @@ construct_runtime!(
 		Sudo: pallet_sudo::{Module, Call, Config<T>, Storage, Event<T>},
 		KVStore: pallet_kvstore::{Module, Call, Storage, Event<T>},
 		HMToken: pallet_hmtoken::{Module, Call, Storage, Event<T>, Config<T>},
+		Escrow: pallet_escrow::{Module, Call, Storage, Event<T>}
 	}
 );
 
