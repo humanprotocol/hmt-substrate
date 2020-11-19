@@ -1,9 +1,10 @@
-use crate::{generate_account_id, mock::*, Error, EscrowId, EscrowInfo, EscrowStatus, Escrows};
+use crate::{generate_account_id, mock::*, Error, EscrowId, EscrowInfo, EscrowStatus, Escrows, RawEvent, Trait};
 use frame_support::{
 	assert_noop, assert_ok,
 	dispatch::{DispatchError, DispatchResult},
 	storage::StorageMap,
 };
+use frame_system::EventRecord;
 use sp_runtime::Percent;
 
 #[derive(Debug, Default)]
@@ -83,6 +84,14 @@ fn set_status(id: EscrowId, status: EscrowStatus) -> DispatchResult {
 			Err(DispatchError::Other("escrow missing"))
 		}
 	})
+}
+
+fn assert_last_event<T: Trait>(generic_event: <T as Trait>::Event) {
+	let events = frame_system::Module::<T>::events();
+	let system_event: <T as frame_system::Trait>::Event = generic_event.into();
+	// compare to the last event record
+	let EventRecord { event, .. } = &events[events.len() - 1];
+	assert_eq!(event, &system_event);
 }
 
 #[test]
@@ -193,5 +202,44 @@ fn complete_negative_tests() {
 		assert_noop!(Escrow::complete(Origin::signed(8), 0), Error::<Test>::NonTrustedAccount);
 		assert_noop!(Escrow::complete(Origin::signed(1), 2), Error::<Test>::MissingEscrow);
 		assert_noop!(Escrow::complete(Origin::signed(1), 0), Error::<Test>::EscrowNotPaid);
+	});
+}
+
+#[test]
+fn store_results_positive_tests() {
+	new_test_ext().execute_with(|| {
+		let sender = 1;
+		let handlers = vec![1, 2];
+		let id = 0;
+		let escrow = create_base_escrow(id, sender, handlers);
+		let url = b"results.url".to_vec();
+		let hash = b"0xdev".to_vec();
+		assert_ok!(Escrow::store_results(Origin::signed(1), id, url.clone(), hash.clone()));
+		assert_last_event::<Test>(RawEvent::<Test>::IntermediateStorage(id, url, hash).into());
+	});
+}
+
+#[test]
+fn store_results_negative_tests() {
+	new_test_ext().execute_with(|| {
+		let sender = 1;
+		let handlers = vec![1, 2];
+		let id = 0;
+		let escrow = create_base_escrow(id, sender, handlers);
+		let url = b"results.url".to_vec();
+		let hash = b"0xdev".to_vec();
+		assert_noop!(
+			Escrow::store_results(Origin::signed(8), id, url.clone(), hash.clone()),
+			Error::<Test>::NonTrustedAccount
+		);
+		assert_noop!(
+			Escrow::store_results(Origin::signed(1), 2, url.clone(), hash.clone()),
+			Error::<Test>::MissingEscrow
+		);
+		set_status(id, EscrowStatus::Cancelled).expect("setting status should work");
+		assert_noop!(
+			Escrow::store_results(Origin::signed(1), id, url.clone(), hash.clone()),
+			Error::<Test>::EscrowClosed
+		);
 	});
 }

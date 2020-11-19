@@ -183,6 +183,7 @@ decl_module! {
 
 		#[weight = 0]
 		fn store_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
+			// TODO: We will probably want to limit the result size as well.
 			let who = ensure_signed(origin)?;
 			let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 			ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
