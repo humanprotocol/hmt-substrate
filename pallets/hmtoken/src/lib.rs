@@ -170,7 +170,7 @@ pub trait WeightInfo {
 /// Implement WeightInfo for the unit type for easy mocking/testing
 impl WeightInfo for () {
     fn transfer() -> Weight { 0 }
-	fn transfer_bulk(a: u32, ) -> Weight { 0 }
+	fn transfer_bulk(_a: u32, ) -> Weight { 0 }
 }
 
 decl_module! {

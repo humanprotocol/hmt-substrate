@@ -1,9 +1,10 @@
-use crate::{
-	mock::*,
-	Error, EscrowId, EscrowInfo, EscrowStatus, generate_account_id,
+use crate::{generate_account_id, mock::*, Error, EscrowId, EscrowInfo, EscrowStatus, Escrows};
+use frame_support::{
+	assert_noop, assert_ok,
+	dispatch::{DispatchError, DispatchResult},
+	storage::StorageMap,
 };
 use sp_runtime::Percent;
-use frame_support::{assert_noop, assert_ok};
 
 #[derive(Debug, Default)]
 struct EscrowBuilder {
@@ -21,9 +22,7 @@ struct EscrowBuilder {
 
 impl EscrowBuilder {
 	pub fn new() -> Self {
-		EscrowBuilder {
-			..Default::default()
-		}
+		EscrowBuilder { ..Default::default() }
 	}
 
 	pub fn id(mut self, id: EscrowId) -> Self {
@@ -37,7 +36,7 @@ impl EscrowBuilder {
 		let manifest_url = self.manifest_url.unwrap_or(b"some.url".to_vec());
 		let manifest_hash = self.manifest_hash.unwrap_or(b"0xdev".to_vec());
 		let reputation_oracle = self.reputation_oracle.unwrap_or(3);
-		let recording_oracle = self.recording_oracle.unwrap_or(4); 
+		let recording_oracle = self.recording_oracle.unwrap_or(4);
 		let reputation_oracle_stake = self.reputation_oracle_stake.unwrap_or(Percent::from_percent(50));
 		let recording_oracle_stake = self.recording_oracle_stake.unwrap_or(Percent::from_percent(50));
 		let id = self.id.unwrap_or(0);
@@ -61,8 +60,29 @@ impl EscrowBuilder {
 fn create_base_escrow(id: EscrowId, sender: AccountId, handlers: Vec<AccountId>) -> EscrowInfo<Moment, AccountId> {
 	let i = EscrowBuilder::new().id(id).build();
 	let copy = i.clone();
-	assert_ok!(Escrow::create(Origin::signed(sender), i.canceller, handlers, i.manifest_url, i.manifest_hash, i.reputation_oracle, i.recording_oracle, i.reputation_oracle_stake, i.recording_oracle_stake));
+	assert_ok!(Escrow::create(
+		Origin::signed(sender),
+		i.canceller,
+		handlers,
+		i.manifest_url,
+		i.manifest_hash,
+		i.reputation_oracle,
+		i.recording_oracle,
+		i.reputation_oracle_stake,
+		i.recording_oracle_stake
+	));
 	copy
+}
+
+fn set_status(id: EscrowId, status: EscrowStatus) -> DispatchResult {
+	Escrows::<Test>::try_mutate(id, |e| -> DispatchResult {
+		if let Some(escrow) = e {
+			escrow.status = status;
+			Ok(())
+		} else {
+			Err(DispatchError::Other("escrow missing"))
+		}
+	})
 }
 
 #[test]
@@ -74,14 +94,22 @@ fn it_creates_escrow_instance() {
 		assert_eq!(Escrow::escrow(0), Some(escrow.clone()));
 		assert_eq!(Escrow::counter(), 1);
 		let mut all_handlers = handlers.clone();
-		all_handlers.extend(vec![escrow.canceller, escrow.reputation_oracle, escrow.recording_oracle, sender]);
+		all_handlers.extend(vec![
+			escrow.canceller,
+			escrow.reputation_oracle,
+			escrow.recording_oracle,
+			sender,
+		]);
 		for handler in all_handlers {
 			assert!(Escrow::is_trusted_handler(0, handler));
 		}
 
 		create_base_escrow(1, sender, handlers);
 		assert_eq!(Escrow::counter(), 2);
-		assert_ne!(Escrow::escrow(0).unwrap().escrow_address, Escrow::escrow(1).unwrap().escrow_address);
+		assert_ne!(
+			Escrow::escrow(0).unwrap().escrow_address,
+			Escrow::escrow(1).unwrap().escrow_address
+		);
 	});
 }
 
@@ -98,7 +126,6 @@ fn abort_positive_tests() {
 
 		assert_eq!(Escrow::escrow(0), None);
 		assert_eq!((balance_after - balance_before), 100);
-
 	});
 }
 #[test]
@@ -110,9 +137,10 @@ fn abort_negative_tests() {
 		assert_noop!(Escrow::abort(Origin::signed(8), 0), Error::<Test>::NonTrustedAccount);
 		assert_noop!(Escrow::abort(Origin::signed(1), 2), Error::<Test>::MissingEscrow);
 		assert_noop!(Escrow::abort(Origin::signed(1), 0), Error::<Test>::OutOfFunds);
-
-		//TODO add tests for escrow status complete and paid
-	
+		set_status(0, EscrowStatus::Complete).expect("setting status should work");
+		assert_noop!(Escrow::abort(Origin::signed(1), 0), Error::<Test>::AlreadyComplete);
+		set_status(0, EscrowStatus::Paid).expect("setting status should work");
+		assert_noop!(Escrow::abort(Origin::signed(1), 0), Error::<Test>::AlreadyPaid);
 	});
 }
 
@@ -124,9 +152,9 @@ fn cancel_positive_tests() {
 		let escrow = create_base_escrow(0, sender, handlers);
 		assert_ok!(HmToken::transfer(Origin::signed(1), escrow.escrow_address, 100));
 		assert_ok!(Escrow::cancel(Origin::signed(1), 0));
-		assert_eq!(Escrow::escrow(0).unwrap().status, EscrowStatus::Cancelled);		
+		assert_eq!(Escrow::escrow(0).unwrap().status, EscrowStatus::Cancelled);
 	});
-}	
+}
 
 #[test]
 fn cancel_negative_tests() {
@@ -137,8 +165,33 @@ fn cancel_negative_tests() {
 		assert_noop!(Escrow::cancel(Origin::signed(8), 0), Error::<Test>::NonTrustedAccount);
 		assert_noop!(Escrow::cancel(Origin::signed(1), 2), Error::<Test>::MissingEscrow);
 		assert_noop!(Escrow::cancel(Origin::signed(1), 0), Error::<Test>::OutOfFunds);
-
-		//TODO add tests for escrow status complete and paid
-		
+		set_status(0, EscrowStatus::Complete).expect("setting status should work");
+		assert_noop!(Escrow::cancel(Origin::signed(1), 0), Error::<Test>::AlreadyComplete);
+		set_status(0, EscrowStatus::Paid).expect("setting status should work");
+		assert_noop!(Escrow::cancel(Origin::signed(1), 0), Error::<Test>::AlreadyPaid);
 	});
-}	
+}
+
+#[test]
+fn complete_positive_tests() {
+	new_test_ext().execute_with(|| {
+		let sender = 1;
+		let handlers = vec![1, 2];
+		let escrow = create_base_escrow(0, sender, handlers);
+		set_status(0, EscrowStatus::Paid).expect("setting status should work");
+		assert_ok!(Escrow::complete(Origin::signed(1), 0));
+		assert_eq!(Escrow::escrow(0).unwrap().status, EscrowStatus::Complete);
+	});
+}
+
+#[test]
+fn complete_negative_tests() {
+	new_test_ext().execute_with(|| {
+		let sender = 1;
+		let handlers = vec![1, 2];
+		let escrow = create_base_escrow(0, sender, handlers);
+		assert_noop!(Escrow::complete(Origin::signed(8), 0), Error::<Test>::NonTrustedAccount);
+		assert_noop!(Escrow::complete(Origin::signed(1), 2), Error::<Test>::MissingEscrow);
+		assert_noop!(Escrow::complete(Origin::signed(1), 0), Error::<Test>::EscrowNotPaid);
+	});
+}

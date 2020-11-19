@@ -1,10 +1,13 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use sp_std::prelude::*;
-use codec::{Encode, Decode};
-use frame_support::{decl_error, decl_event, decl_module, ensure, decl_storage, dispatch, traits::Get};
+use codec::{Decode, Encode};
+use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, ensure, traits::Get};
 use frame_system::ensure_signed;
-use sp_runtime::{Percent, traits::{Hash, Saturating}};
+use sp_runtime::{
+	traits::{Hash, Saturating},
+	Percent,
+};
+use sp_std::prelude::*;
 
 #[cfg(test)]
 mod mock;
@@ -57,8 +60,8 @@ pub trait Trait: frame_system::Trait + timestamp::Trait + hmtoken::Trait {
 
 decl_storage! {
 	trait Store for Module<T: Trait> as Escrow {
-		Escrow get(fn escrow): map hasher(twox_64_concat) EscrowId => Option<EscrowInfo<T::Moment, T::AccountId>>;
-		
+		Escrows get(fn escrow): map hasher(twox_64_concat) EscrowId => Option<EscrowInfo<T::Moment, T::AccountId>>;
+
 		Counter get(fn counter): EscrowId;
 
 		TrustedHandler get(fn is_trusted_handler):
@@ -93,7 +96,7 @@ decl_error! {
 		EscrowClosed,
 	}
 }
- 
+
 decl_module! {
 	pub struct Module<T: Trait> for enum Call where origin: T::Origin {
 		type Error = Error<T>;
@@ -132,7 +135,7 @@ decl_module! {
 				escrow_address,
 			};
 			Counter::set(id + 1);
-			<Escrow<T>>::insert(id, new_escrow);
+			<Escrows<T>>::insert(id, new_escrow);
 			let mut trusted = vec![recording_oracle, reputation_oracle, canceller.clone(), who.clone()];
 			trusted.extend(handlers);
 			Self::add_trusted_handlers(id, trusted);
@@ -149,9 +152,9 @@ decl_module! {
 			let balance = Self::get_balance(&escrow);
 			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
 			hmtoken::Module::<T>::do_transfer(escrow.escrow_address.clone(), escrow.canceller.clone(), balance)?;
-			<Escrow<T>>::remove(id);
+			<Escrows<T>>::remove(id);
 		}
-		
+
 		#[weight = 0]
 		fn cancel(origin, id: EscrowId) {
 			let who = ensure_signed(origin)?;
@@ -164,7 +167,7 @@ decl_module! {
 
 			hmtoken::Module::<T>::do_transfer(escrow.escrow_address.clone(), escrow.canceller.clone(), balance)?;
 			escrow.status = EscrowStatus::Cancelled;
-			<Escrow<T>>::insert(id, escrow);
+			<Escrows<T>>::insert(id, escrow);
 		}
 
 		#[weight = 0]
@@ -175,7 +178,7 @@ decl_module! {
 			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
 			ensure!(escrow.status == EscrowStatus::Paid, Error::<T>::EscrowNotPaid);
 			escrow.status = EscrowStatus::Complete;
-			<Escrow<T>>::insert(id, escrow);
+			<Escrows<T>>::insert(id, escrow);
 		}
 
 		#[weight = 0]
@@ -206,8 +209,8 @@ decl_module! {
 			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 
 			let mut sum: T::Balance = 0.into();
-            for a in amounts.iter() {
-                sum = sum.saturating_add(*a);
+			for a in amounts.iter() {
+				sum = sum.saturating_add(*a);
 			}
 			if balance < sum {
 				Self::deposit_event(RawEvent::BulkPayoutAborted);
@@ -250,20 +253,26 @@ impl<T: Trait> Module<T> {
 		hmtoken::Module::<T>::balance(target_escrow.escrow_address.clone())
 	}
 
-	fn finalize_payouts(escrow: &EscrowInfo<T::Moment, T::AccountId>, amounts: &Vec<T::Balance>) -> (T::Balance, T::Balance, Vec<T::Balance>) {
+	fn finalize_payouts(
+		escrow: &EscrowInfo<T::Moment, T::AccountId>,
+		amounts: &Vec<T::Balance>,
+	) -> (T::Balance, T::Balance, Vec<T::Balance>) {
 		let mut reputation_fee_total: T::Balance = 0.into();
 		let reputation_stake = escrow.reputation_oracle_stake;
 		let mut recording_fee_total: T::Balance = 0.into();
 		let recording_stake = escrow.recording_oracle_stake;
-		let final_amounts = amounts.iter().map(|amount| {
-			// TODO: unclear whether this math is safe and has the intended semantics.
-			let reputation_fee = reputation_stake.mul_floor(*amount);
-			let recording_fee = recording_stake.mul_floor(*amount);
-			let amount_without_fee = amount.saturating_sub(reputation_fee).saturating_sub(recording_fee);
-			reputation_fee_total = reputation_fee_total.saturating_add(reputation_fee);
-			recording_fee_total = recording_fee_total.saturating_add(recording_fee);
-			amount_without_fee
-		}).collect();
+		let final_amounts = amounts
+			.iter()
+			.map(|amount| {
+				// TODO: unclear whether this math is safe and has the intended semantics.
+				let reputation_fee = reputation_stake.mul_floor(*amount);
+				let recording_fee = recording_stake.mul_floor(*amount);
+				let amount_without_fee = amount.saturating_sub(reputation_fee).saturating_sub(recording_fee);
+				reputation_fee_total = reputation_fee_total.saturating_add(reputation_fee);
+				recording_fee_total = recording_fee_total.saturating_add(recording_fee);
+				amount_without_fee
+			})
+			.collect();
 		(reputation_fee_total, recording_fee_total, final_amounts)
 	}
 }

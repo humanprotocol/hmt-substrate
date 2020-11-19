@@ -1,4 +1,4 @@
-use crate::{Module, Trait,};
+use crate::{Module, Trait};
 use frame_support::{impl_outer_origin, parameter_types, weights::Weight};
 use frame_system as system;
 use sp_core::H256;
@@ -96,12 +96,9 @@ pub type Escrow = Module<Test>;
 pub type HmToken = pallet_hmtoken::Module<Test>;
 pub type System = system::Module<Test>;
 
-
 // Build genesis storage according to the mock runtime.
 pub fn new_test_ext() -> sp_io::TestExternalities {
-	let mut storage = system::GenesisConfig::default()
-		.build_storage::<Test>()
-		.unwrap();
+	let mut storage = system::GenesisConfig::default().build_storage::<Test>().unwrap();
 	pallet_hmtoken::GenesisConfig::<Test> {
 		total_supply: 1_000,
 		name: b"Human Protocol Token".to_vec(),
