@@ -254,17 +254,16 @@ decl_module! {
         // ){
 
         // }
-
-        #[weight = 0]
-        fn transfer_bulk(origin,
-            tos: Vec<T::AccountId>,
-            values: Vec<T::Balance>,
-            tx_id: u128
-        ){
-            let from = ensure_signed(origin)?;
-            let (bulk_count, failures) = Self::do_transfer_bulk(from, tos, values)?;
-            Self::deposit_event(RawEvent::BulkTransfer(tx_id, bulk_count, failures));
-        }
+    //     #[weight = 0]
+    //     fn transfer_bulk(origin,
+    //         tos: Vec<T::AccountId>,
+    //         values: Vec<T::Balance>,
+    //         tx_id: u128
+    //     ){
+    //         let from = ensure_signed(origin)?;
+    //         let (bulk_count, failures) = Self::do_transfer_bulk(from, tos, values)?;
+    //         Self::deposit_event(RawEvent::BulkTransfer(tx_id, bulk_count, failures));
+    //     }
     }
 }
 

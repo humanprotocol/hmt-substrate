@@ -83,7 +83,7 @@ decl_storage! {
 
 		FinalResults get(fn final_results): map hasher(twox_64_concat) EscrowId => Option<ResultInfo>;
 
-		TrustedHandler get(fn is_trusted_handler):
+		TrustedHandlers get(fn is_trusted_handler):
 			double_map hasher(twox_64_concat) EscrowId, hasher(twox_64_concat) T::AccountId => bool;
 	}
 }
@@ -163,22 +163,22 @@ decl_module! {
 		#[weight = 0]
 		fn abort(origin, id: EscrowId) {
 			let who = ensure_signed(origin)?;
-			let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
+			let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 			ensure!(escrow.status != EscrowStatus::Complete, Error::<T>::AlreadyComplete);
 			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 			let balance = Self::get_balance(&escrow);
 			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
 			hmtoken::Module::<T>::do_transfer(escrow.escrow_address.clone(), escrow.canceller.clone(), balance)?;
 			<Escrows<T>>::remove(id);
-			<TrustedHandler<T>>::remove_prefix(id);
+			<TrustedHandlers<T>>::remove_prefix(id);
 		}
 
 		#[weight = 0]
 		fn cancel(origin, id: EscrowId) {
 			let who = ensure_signed(origin)?;
-			let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
+			let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 			ensure!(escrow.status != EscrowStatus::Complete, Error::<T>::AlreadyComplete);
 			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 			let balance = Self::get_balance(&escrow);
@@ -192,9 +192,9 @@ decl_module! {
 		#[weight = 0]
 		fn complete(origin, id: EscrowId) {
 			let who = ensure_signed(origin)?;
+			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
 			let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 			ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
-			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
 			ensure!(escrow.status == EscrowStatus::Paid, Error::<T>::EscrowNotPaid);
 			escrow.status = EscrowStatus::Complete;
 			<Escrows<T>>::insert(id, escrow);
@@ -204,9 +204,9 @@ decl_module! {
 		fn store_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
 			// TODO: We will probably want to limit the result size as well.
 			let who = ensure_signed(origin)?;
+			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
 			let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 			ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
-			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
 			ensure!(escrow.status == EscrowStatus::Pending || escrow.status == EscrowStatus::Partial, Error::<T>::EscrowClosed);
 			Self::deposit_event(RawEvent::IntermediateStorage(id, url, hash));
 		}
@@ -219,12 +219,12 @@ decl_module! {
 			results_url: Option<Vec<u8>>,
 			results_hash: Option<Vec<u8>>,
 			tx_id: u128
-		) {
+		) -> DispatchResult {
 			with_transaction_result(|| -> DispatchResult {
 				let who = ensure_signed(origin)?;
+				ensure!(Self::is_trusted_handler(id, &who), Error::<T>::NonTrustedAccount);
 				let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 				ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
-				ensure!(Self::is_trusted_handler(id, &who), Error::<T>::NonTrustedAccount);
 				let balance = Self::get_balance(&escrow);
 				ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
 				ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
@@ -247,9 +247,10 @@ decl_module! {
 				let (reputation_fee, recording_fee, final_amounts) = Self::finalize_payouts(&escrow, &amounts);
 				
 				let address = escrow.escrow_address.clone();
-				hmtoken::Module::<T>::do_transfer_bulk(address.clone(), recipients, final_amounts)?;
+
 				hmtoken::Module::<T>::do_transfer(address.clone(), escrow.reputation_oracle.clone(), reputation_fee)?;
-				hmtoken::Module::<T>::do_transfer(address, escrow.recording_oracle.clone(), recording_fee)?;
+				hmtoken::Module::<T>::do_transfer(address.clone(), escrow.recording_oracle.clone(), recording_fee)?;
+				hmtoken::Module::<T>::do_transfer_bulk(address, recipients, final_amounts)?;
 
 				let balance = Self::get_balance(&escrow);
 				if escrow.status == EscrowStatus::Pending {
@@ -261,7 +262,7 @@ decl_module! {
 				<Escrows<T>>::insert(id, escrow);
 				Self::deposit_event(RawEvent::BulkPayout(id, tx_id));
 				Ok(())
-			});
+			})
 		}
 	}
 }
@@ -269,7 +270,7 @@ decl_module! {
 impl<T: Trait> Module<T> {
 	fn add_trusted_handlers(id: EscrowId, trusted: Vec<T::AccountId>) {
 		for trust in trusted {
-			<TrustedHandler<T>>::insert(id, trust, true);
+			<TrustedHandlers<T>>::insert(id, trust, true);
 		}
 	}
 

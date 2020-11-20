@@ -1,8 +1,8 @@
-use crate::{generate_account_id, mock::*, Error, EscrowId, EscrowInfo, EscrowStatus, Escrows, RawEvent, Trait};
+use crate::{generate_account_id, mock::*, Error, EscrowId, EscrowInfo, EscrowStatus, Escrows, hmtoken, RawEvent, Trait, TrustedHandlers, ResultInfo};
 use frame_support::{
 	assert_noop, assert_ok,
 	dispatch::{DispatchError, DispatchResult},
-	storage::StorageMap,
+	storage::{StorageMap, StorageDoubleMap},
 };
 use frame_system::EventRecord;
 use sp_runtime::Percent;
@@ -31,6 +31,26 @@ impl EscrowBuilder {
 		self
 	}
 
+	pub fn reputation_oracle(mut self, a: AccountId) -> Self {
+		self.reputation_oracle = Some(a);
+		self
+	}
+
+	pub fn recording_oracle(mut self, a: AccountId) -> Self {
+		self.recording_oracle = Some(a);
+		self
+	}
+
+	pub fn reputation_stake(mut self, p: Percent) -> Self {
+		self.reputation_oracle_stake = Some(p);
+		self
+	}
+
+	pub fn recording_stake(mut self, p: Percent) -> Self {
+		self.recording_oracle_stake = Some(p);
+		self
+	}
+
 	pub fn build(self) -> EscrowInfo<Moment, AccountId> {
 		let status = self.status.unwrap_or(EscrowStatus::Pending);
 		let canceller = self.canceller.unwrap_or(1);
@@ -38,8 +58,8 @@ impl EscrowBuilder {
 		let manifest_hash = self.manifest_hash.unwrap_or(b"0xdev".to_vec());
 		let reputation_oracle = self.reputation_oracle.unwrap_or(3);
 		let recording_oracle = self.recording_oracle.unwrap_or(4);
-		let reputation_oracle_stake = self.reputation_oracle_stake.unwrap_or(Percent::from_percent(50));
-		let recording_oracle_stake = self.recording_oracle_stake.unwrap_or(Percent::from_percent(50));
+		let reputation_oracle_stake = self.reputation_oracle_stake.unwrap_or(Percent::from_percent(10));
+		let recording_oracle_stake = self.recording_oracle_stake.unwrap_or(Percent::from_percent(10));
 		let id = self.id.unwrap_or(0);
 		let escrow_address = generate_account_id::<Test>(id, manifest_url.clone(), manifest_hash.clone());
 		let end_time = 1000;
@@ -58,9 +78,8 @@ impl EscrowBuilder {
 	}
 }
 
-fn create_base_escrow(id: EscrowId, sender: AccountId, handlers: Vec<AccountId>) -> EscrowInfo<Moment, AccountId> {
-	let i = EscrowBuilder::new().id(id).build();
-	let copy = i.clone();
+fn store_escrow(sender: AccountId, handlers: Vec<AccountId>, e: &EscrowInfo<Moment, AccountId>) {
+	let i = e.clone();
 	assert_ok!(Escrow::create(
 		Origin::signed(sender),
 		i.canceller,
@@ -72,7 +91,12 @@ fn create_base_escrow(id: EscrowId, sender: AccountId, handlers: Vec<AccountId>)
 		i.reputation_oracle_stake,
 		i.recording_oracle_stake
 	));
-	copy
+}
+
+fn store_default_escrow(id: EscrowId, sender: AccountId, handlers: Vec<AccountId>) -> EscrowInfo<Moment, AccountId> {
+	let i = EscrowBuilder::new().id(id).build();
+	store_escrow(sender, handlers, &i);
+	i
 }
 
 fn set_status(id: EscrowId, status: EscrowStatus) -> DispatchResult {
@@ -99,7 +123,7 @@ fn it_creates_escrow_instance() {
 	new_test_ext().execute_with(|| {
 		let sender = 1;
 		let handlers = vec![1, 2];
-		let escrow = create_base_escrow(0, sender, handlers.clone());
+		let escrow = store_default_escrow(0, sender, handlers.clone());
 		assert_eq!(Escrow::escrow(0), Some(escrow.clone()));
 		assert_eq!(Escrow::counter(), 1);
 		let mut all_handlers = handlers.clone();
@@ -113,7 +137,7 @@ fn it_creates_escrow_instance() {
 			assert!(Escrow::is_trusted_handler(0, handler));
 		}
 
-		create_base_escrow(1, sender, handlers);
+		store_default_escrow(1, sender, handlers);
 		assert_eq!(Escrow::counter(), 2);
 		assert_ne!(
 			Escrow::escrow(0).unwrap().escrow_address,
@@ -128,7 +152,7 @@ fn abort_positive_tests() {
 		let sender = 1;
 		let handlers = vec![1, 2];
 		let id = 0;
-		let escrow = create_base_escrow(id, sender, handlers);
+		let escrow = store_default_escrow(id, sender, handlers);
 		assert!(Escrow::is_trusted_handler(id, sender));
 		assert_ok!(HmToken::transfer(Origin::signed(sender), escrow.escrow_address, 100));
 		let balance_before = HmToken::balance(sender);
@@ -145,8 +169,10 @@ fn abort_negative_tests() {
 	new_test_ext().execute_with(|| {
 		let sender = 1;
 		let handlers = vec![1, 2];
-		let escrow = create_base_escrow(0, sender, handlers);
+		let escrow = store_default_escrow(0, sender, handlers);
 		assert_noop!(Escrow::abort(Origin::signed(8), 0), Error::<Test>::NonTrustedAccount);
+		// Set the trusted handler manually to trigger missing escrow error.
+		TrustedHandlers::<Test>::insert(2, sender, true);
 		assert_noop!(Escrow::abort(Origin::signed(1), 2), Error::<Test>::MissingEscrow);
 		assert_noop!(Escrow::abort(Origin::signed(1), 0), Error::<Test>::OutOfFunds);
 		set_status(0, EscrowStatus::Complete).expect("setting status should work");
@@ -162,7 +188,7 @@ fn cancel_positive_tests() {
 		let sender = 1;
 		let handlers = vec![1, 2];
 		let id = 0;
-		let escrow = create_base_escrow(id, sender, handlers);
+		let escrow = store_default_escrow(id, sender, handlers);
 		assert_ok!(HmToken::transfer(Origin::signed(1), escrow.escrow_address, 100));
 		assert_ok!(Escrow::cancel(Origin::signed(1), id));
 		assert_eq!(Escrow::escrow(id).unwrap().status, EscrowStatus::Cancelled);
@@ -174,8 +200,10 @@ fn cancel_negative_tests() {
 	new_test_ext().execute_with(|| {
 		let sender = 1;
 		let handlers = vec![1, 2];
-		let escrow = create_base_escrow(0, sender, handlers);
+		let escrow = store_default_escrow(0, sender, handlers);
 		assert_noop!(Escrow::cancel(Origin::signed(8), 0), Error::<Test>::NonTrustedAccount);
+		// Set the trusted handler manually to trigger missing escrow error.
+		TrustedHandlers::<Test>::insert(2, sender, true);
 		assert_noop!(Escrow::cancel(Origin::signed(1), 2), Error::<Test>::MissingEscrow);
 		assert_noop!(Escrow::cancel(Origin::signed(1), 0), Error::<Test>::OutOfFunds);
 		set_status(0, EscrowStatus::Complete).expect("setting status should work");
@@ -190,7 +218,7 @@ fn complete_positive_tests() {
 	new_test_ext().execute_with(|| {
 		let sender = 1;
 		let handlers = vec![1, 2];
-		let escrow = create_base_escrow(0, sender, handlers);
+		let escrow = store_default_escrow(0, sender, handlers);
 		set_status(0, EscrowStatus::Paid).expect("setting status should work");
 		assert_ok!(Escrow::complete(Origin::signed(1), 0));
 		assert_eq!(Escrow::escrow(0).unwrap().status, EscrowStatus::Complete);
@@ -202,10 +230,13 @@ fn complete_negative_tests() {
 	new_test_ext().execute_with(|| {
 		let sender = 1;
 		let handlers = vec![1, 2];
-		let escrow = create_base_escrow(0, sender, handlers);
+		let escrow = store_default_escrow(0, sender, handlers);
 		assert_noop!(Escrow::complete(Origin::signed(8), 0), Error::<Test>::NonTrustedAccount);
-		assert_noop!(Escrow::complete(Origin::signed(1), 2), Error::<Test>::MissingEscrow);
-		assert_noop!(Escrow::complete(Origin::signed(1), 0), Error::<Test>::EscrowNotPaid);
+		// Set the trusted handler manually to trigger missing escrow error.
+		TrustedHandlers::<Test>::insert(2, sender, true);
+		assert_noop!(Escrow::complete(Origin::signed(sender), 2), Error::<Test>::MissingEscrow);
+		assert_noop!(Escrow::complete(Origin::signed(sender), 0), Error::<Test>::EscrowNotPaid);
+		// TODO at an expired check
 	});
 }
 
@@ -215,7 +246,7 @@ fn store_results_positive_tests() {
 		let sender = 1;
 		let handlers = vec![1, 2];
 		let id = 0;
-		let escrow = create_base_escrow(id, sender, handlers);
+		let escrow = store_default_escrow(id, sender, handlers);
 		let url = b"results.url".to_vec();
 		let hash = b"0xdev".to_vec();
 		assert_ok!(Escrow::store_results(Origin::signed(1), id, url.clone(), hash.clone()));
@@ -229,13 +260,15 @@ fn store_results_negative_tests() {
 		let sender = 1;
 		let handlers = vec![1, 2];
 		let id = 0;
-		let escrow = create_base_escrow(id, sender, handlers);
+		let escrow = store_default_escrow(id, sender, handlers);
 		let url = b"results.url".to_vec();
 		let hash = b"0xdev".to_vec();
 		assert_noop!(
 			Escrow::store_results(Origin::signed(8), id, url.clone(), hash.clone()),
 			Error::<Test>::NonTrustedAccount
 		);
+		// Set the trusted handler manually to trigger missing escrow error.
+		TrustedHandlers::<Test>::insert(2, sender, true);
 		assert_noop!(
 			Escrow::store_results(Origin::signed(1), 2, url.clone(), hash.clone()),
 			Error::<Test>::MissingEscrow
@@ -245,5 +278,75 @@ fn store_results_negative_tests() {
 			Escrow::store_results(Origin::signed(1), id, url.clone(), hash.clone()),
 			Error::<Test>::EscrowClosed
 		);
+		// TODO at an expired check
 	});
+}
+
+#[test]
+fn bulk_payout_positive_tests() {
+	new_test_ext().execute_with(|| {
+		let sender = 1;
+		let handlers = vec![1, 2];
+		let rep_oracle = 3;
+		let rec_oracle = 4;
+		let recipients = vec![5, 6];
+		let amounts = vec![10, 10];
+		let id = 0;
+		let escrow = EscrowBuilder::new().id(id)
+			.reputation_oracle(rep_oracle).reputation_stake(Percent::from_percent(10))
+			.recording_oracle(rec_oracle).recording_stake(Percent::from_percent(10))
+			.build();
+		store_escrow(sender, handlers, &escrow);
+		let url = b"results.url".to_vec();
+		let hash = b"0xdev".to_vec();
+		let tx_id = 42;
+		HmToken::transfer(Origin::signed(1), escrow.escrow_address, 40);
+		assert_ok!(Escrow::bulk_payout(Origin::signed(1), id, recipients.clone(), amounts.clone(), Some(url.clone()), Some(hash.clone()), tx_id));
+		assert_last_event::<Test>(RawEvent::<Test>::BulkPayout(id, tx_id).into());
+		assert_eq!(HmToken::balance(rep_oracle), 2);
+		assert_eq!(HmToken::balance(rec_oracle), 2);
+		assert_eq!(HmToken::balance(recipients[0]), 8);
+		assert_eq!(HmToken::balance(recipients[1]), 8);
+
+		let results_url = url.clone();
+		let results_hash = hash.clone();
+		assert_eq!(Escrow::final_results(id), Some(ResultInfo { results_url, results_hash }));
+		assert_eq!(Escrow::escrow(0).unwrap().status, EscrowStatus::Partial);
+		assert_ok!(Escrow::bulk_payout(Origin::signed(1), id, recipients.clone(), amounts, Some(url.clone()), Some(hash.clone()), tx_id));
+		assert_eq!(Escrow::escrow(0).unwrap().status, EscrowStatus::Paid);
+	});
+}
+
+#[test]
+fn bulk_payout_negative_tests() {
+	new_test_ext().execute_with(|| {
+		let sender = 1;
+		let handlers = vec![1, 2];
+		let rep_oracle = 3;
+		let rec_oracle = 4;
+		let mut recipients = vec![5, 6];
+		let amounts = vec![10, 10];
+		let id = 0;
+		let url = b"results.url".to_vec();
+		let hash = b"0xdev".to_vec();
+		let tx_id = 42;
+		let escrow = store_default_escrow(id, sender, handlers);
+		// Set the trusted handler manually to trigger missing escrow error.
+		TrustedHandlers::<Test>::insert(2, sender, true);
+		assert_noop!(Escrow::bulk_payout(Origin::signed(1), 2, recipients.clone(), amounts.clone(), Some(url.clone()), Some(hash.clone()), tx_id), Error::<Test>::MissingEscrow);
+		// TODO at an expired check
+		assert_noop!(Escrow::bulk_payout(Origin::signed(9), id, recipients.clone(), amounts.clone(), Some(url.clone()), Some(hash.clone()), tx_id), Error::<Test>::NonTrustedAccount);
+		assert_noop!(Escrow::bulk_payout(Origin::signed(1), id, recipients.clone(), amounts.clone(), Some(url.clone()), Some(hash.clone()), tx_id), Error::<Test>::OutOfFunds);
+		HmToken::transfer(Origin::signed(1), escrow.escrow_address, 10);
+		assert_noop!(Escrow::bulk_payout(Origin::signed(1), id, recipients.clone(), amounts.clone(), Some(url.clone()), Some(hash.clone()), tx_id), Error::<Test>::OutOfFunds);
+		recipients.push(7);
+		HmToken::transfer(Origin::signed(1), escrow.escrow_address, 20);
+		assert_noop!(Escrow::bulk_payout(Origin::signed(1), id, recipients.clone(), amounts.clone(), Some(url.clone()), Some(hash.clone()), tx_id), hmtoken::Error::<Test>::MismatchBulkTransfer);
+		// no payout on failed bulk
+		assert_eq!(HmToken::balance(rep_oracle), 0);
+		assert_eq!(HmToken::balance(rec_oracle), 0);
+
+		set_status(id, EscrowStatus::Paid).expect("setting status should work");
+		assert_noop!(Escrow::bulk_payout(Origin::signed(1), id, recipients.clone(), amounts.clone(), Some(url.clone()), Some(hash.clone()), tx_id), Error::<Test>::AlreadyPaid);
+	})
 }
