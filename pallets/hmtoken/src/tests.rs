@@ -63,47 +63,14 @@ fn bulk_transfer_works() {
         let first_rec = 2;
         let second_rec = 3;
         let id = 42;
-        assert_ok!(HMToken::transfer_bulk(
-            Origin::signed(from),
+        assert_ok!(HMToken::do_transfer_bulk(
+            from,
             vec![first_rec, second_rec],
             vec![amount, amount],
-            id
         ));
         assert_eq!(HMToken::balance(from), new_balance);
         assert_eq!(HMToken::balance(first_rec), amount);
         assert_eq!(HMToken::balance(second_rec), amount);
-        assert_eq!(
-            last_event(),
-            TestEvent::HMTokenPallet(RawEvent::BulkTransfer(id, 2, 0))
-        );
-    });
-}
-
-#[test]
-fn bulk_transfer_fails_and_passes() {
-    new_test_ext().execute_with(|| {
-        let amount: u128 = HMToken::total_supply() - 10;
-        let new_balance = 0;
-        let from = 1;
-        let first_rec = 2;
-        let second_rec = 3;
-        let id = 42;
-        // Transfer some funds away to make sure that one of the bulk transfers will fail.
-        assert_ok!(HMToken::transfer(Origin::signed(from), 5, 10));
-        assert_ok!(HMToken::transfer_bulk(
-            Origin::signed(from),
-            vec![first_rec, second_rec],
-            vec![amount, 1],
-            id
-        ));
-        assert_eq!(HMToken::balance(from), new_balance);
-        assert_eq!(HMToken::balance(first_rec), amount);
-        assert_eq!(HMToken::balance(second_rec), 0);
-
-        assert_eq!(
-            last_event(),
-            TestEvent::HMTokenPallet(RawEvent::BulkTransfer(id, 1, 1))
-        );
     });
 }
 
@@ -117,39 +84,35 @@ fn bulk_transfer_fails() {
         let second_rec = 3;
         let id = 42;
         assert_noop!(
-            HMToken::transfer_bulk(
-                Origin::signed(from),
+            HMToken::do_transfer_bulk(
+                from,
                 vec![first_rec],
                 vec![amount, amount],
-                id
             ),
             Error::<Test>::MismatchBulkTransfer
         );
         assert_noop!(
-            HMToken::transfer_bulk(
-                Origin::signed(from),
+            HMToken::do_transfer_bulk(
+                from,
                 vec![first_rec, second_rec],
                 vec![amount],
-                id
             ),
             Error::<Test>::MismatchBulkTransfer
         );
 
         assert_noop!(
-            HMToken::transfer_bulk(
-                Origin::signed(from),
+            HMToken::do_transfer_bulk(
+                from,
                 vec![first_rec; 11],
                 vec![amount; 11],
-                id
             ),
             Error::<Test>::TooManyTos
         );
         assert_noop!(
-            HMToken::transfer_bulk(
-                Origin::signed(from),
+            HMToken::do_transfer_bulk(
+                from,
                 vec![first_rec, second_rec],
                 vec![amount, amount],
-                id
             ),
             Error::<Test>::TransferTooBig
         );
