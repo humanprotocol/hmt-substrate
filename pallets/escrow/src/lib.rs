@@ -1,7 +1,13 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Decode, Encode};
-use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch::{self, DispatchError, DispatchResult}, ensure, transactional, traits::Get, storage::{with_transaction, TransactionOutcome}};
+use frame_support::{
+	decl_error, decl_event, decl_module, decl_storage,
+	dispatch::{DispatchError, DispatchResult},
+	ensure,
+	storage::{with_transaction, TransactionOutcome},
+	traits::Get,
+};
 use frame_system::ensure_signed;
 use sp_runtime::{
 	traits::{Hash, Saturating},
@@ -49,6 +55,7 @@ pub enum EscrowStatus {
 	Cancelled,
 }
 
+/// Generate an account id from an escrow id, a url and a hash.
 pub fn generate_account_id<T: Trait>(id: EscrowId, url: Vec<u8>, hash: Vec<u8>) -> T::AccountId {
 	let mut data = vec![];
 	data.extend(id.encode());
@@ -58,6 +65,7 @@ pub fn generate_account_id<T: Trait>(id: EscrowId, url: Vec<u8>, hash: Vec<u8>) 
 	T::AccountId::decode(&mut data_hash.as_ref()).unwrap_or_default()
 }
 
+// Copied from ORML because the built-in `transactional` attribute doesn't work correctly in FRAME 2.0
 pub fn with_transaction_result<R>(f: impl FnOnce() -> Result<R, DispatchError>) -> Result<R, DispatchError> {
 	with_transaction(|| {
 		let res = f();
@@ -245,7 +253,7 @@ decl_module! {
 					<FinalResults>::insert(id, new_results);
 				}
 				let (reputation_fee, recording_fee, final_amounts) = Self::finalize_payouts(&escrow, &amounts);
-				
+
 				let address = escrow.escrow_address.clone();
 
 				hmtoken::Module::<T>::do_transfer(address.clone(), escrow.reputation_oracle.clone(), reputation_fee)?;
