@@ -346,7 +346,7 @@ impl<T: Trait> Module<T> {
         from: T::AccountId,
         tos: Vec<T::AccountId>,
         values: Vec<T::Balance>,
-    ) -> Result<(u32, u32), dispatch::DispatchError>
+    ) -> dispatch::DispatchResult
     {
         ensure!(tos.len() <= T::BulkAccountsLimit::get(), Error::<T>::TooManyTos);
         ensure!(tos.len() == values.len(), Error::<T>::MismatchBulkTransfer);
@@ -355,16 +355,9 @@ impl<T: Trait> Module<T> {
             sum = sum.saturating_add(*v);
         }
         ensure!(sum <= T::BulkBalanceLimit::get(), Error::<T>::TransferTooBig);
-        let mut failures = 0;
-        let mut bulk_count = 0;
-        //TODO seem difficult for debugging which txs failed if they do
         for (to, value) in tos.into_iter().zip(values.into_iter()) {
-            let result = Self::do_transfer(from.clone(), to, value);
-            match result {
-                Ok(()) => bulk_count += 1,
-                Err(_) => failures += 1,
-            }
+            Self::do_transfer(from.clone(), to, value)?;
         }
-        Ok((bulk_count, failures))
+        Ok(())
     }
 }

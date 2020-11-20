@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Decode, Encode};
-use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, ensure, traits::Get};
+use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch::{self, DispatchError, DispatchResult}, ensure, transactional, traits::Get, storage::{with_transaction, TransactionOutcome}};
 use frame_system::ensure_signed;
 use sp_runtime::{
 	traits::{Hash, Saturating},
@@ -34,6 +34,12 @@ pub struct EscrowInfo<Moment, AccountId> {
 	escrow_address: AccountId,
 }
 
+#[derive(Clone, Encode, Decode, Debug, PartialEq, Eq)]
+pub struct ResultInfo {
+	results_url: Vec<u8>,
+	results_hash: Vec<u8>,
+}
+
 #[derive(Copy, Clone, Debug, Encode, Decode, PartialEq, Eq)]
 pub enum EscrowStatus {
 	Pending,
@@ -52,6 +58,17 @@ pub fn generate_account_id<T: Trait>(id: EscrowId, url: Vec<u8>, hash: Vec<u8>) 
 	T::AccountId::decode(&mut data_hash.as_ref()).unwrap_or_default()
 }
 
+pub fn with_transaction_result<R>(f: impl FnOnce() -> Result<R, DispatchError>) -> Result<R, DispatchError> {
+	with_transaction(|| {
+		let res = f();
+		if res.is_ok() {
+			TransactionOutcome::Commit(res)
+		} else {
+			TransactionOutcome::Rollback(res)
+		}
+	})
+}
+
 pub trait Trait: frame_system::Trait + timestamp::Trait + hmtoken::Trait {
 	type Event: From<Event<Self>> + Into<<Self as frame_system::Trait>::Event>;
 	type StandardDuration: Get<Self::Moment>;
@@ -63,6 +80,8 @@ decl_storage! {
 		Escrows get(fn escrow): map hasher(twox_64_concat) EscrowId => Option<EscrowInfo<T::Moment, T::AccountId>>;
 
 		Counter get(fn counter): EscrowId;
+
+		FinalResults get(fn final_results): map hasher(twox_64_concat) EscrowId => Option<ResultInfo>;
 
 		TrustedHandler get(fn is_trusted_handler):
 			double_map hasher(twox_64_concat) EscrowId, hasher(twox_64_concat) T::AccountId => bool;
@@ -76,9 +95,8 @@ decl_event!(
 		/// The escrow is in Pending status \[escrow_id, creator, canceller, manifest_url, manifest_hash\]
 		Pending(EscrowId, AccountId, AccountId, Vec<u8>, Vec<u8>),
 		IntermediateStorage(EscrowId, Vec<u8>, Vec<u8>),
-		BulkPayoutAborted,
 		/// Bulk payout was executed. Completion indicated by the boolean
-		BulkPayout(bool),
+		BulkPayout(EscrowId, u128),
 	}
 );
 
@@ -153,6 +171,7 @@ decl_module! {
 			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
 			hmtoken::Module::<T>::do_transfer(escrow.escrow_address.clone(), escrow.canceller.clone(), balance)?;
 			<Escrows<T>>::remove(id);
+			<TrustedHandler<T>>::remove_prefix(id);
 		}
 
 		#[weight = 0]
@@ -197,48 +216,52 @@ decl_module! {
 			id: EscrowId,
 			recipients: Vec<T::AccountId>,
 			amounts: Vec<T::Balance>,
-			url: Vec<u8>,
-			hash: Vec<u8>,
+			results_url: Option<Vec<u8>>,
+			results_hash: Option<Vec<u8>>,
 			tx_id: u128
 		) {
-			let who = ensure_signed(origin)?;
-			let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
-			ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
-			ensure!(Self::is_trusted_handler(id, &who), Error::<T>::NonTrustedAccount);
-			let balance = Self::get_balance(&escrow);
-			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
-			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
+			with_transaction_result(|| -> DispatchResult {
+				let who = ensure_signed(origin)?;
+				let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
+				ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
+				ensure!(Self::is_trusted_handler(id, &who), Error::<T>::NonTrustedAccount);
+				let balance = Self::get_balance(&escrow);
+				ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
+				ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 
-			let mut sum: T::Balance = 0.into();
-			for a in amounts.iter() {
-				sum = sum.saturating_add(*a);
-			}
-			if balance < sum {
-				Self::deposit_event(RawEvent::BulkPayoutAborted);
-				return Ok(());
-			}
-			if url.len() > 0 || hash.len() > 0 {
-				// TODO: Store results as event like intermediate or in escrow storage?
-			}
-			let (reputation_fee, recording_fee, final_amounts) = Self::finalize_payouts(&escrow, &amounts);
-
-			let (_, failures) = hmtoken::Module::<T>::do_transfer_bulk(who, recipients, final_amounts)?;
-			let mut bulk_paid = false;
-			if failures == 0 {
+				let mut sum: T::Balance = 0.into();
+				for a in amounts.iter() {
+					sum = sum.saturating_add(*a);
+				}
+				if balance < sum {
+					return Err(Error::<T>::OutOfFunds.into());
+				}
+				if results_url.is_some() || results_hash.is_some() {
+					let new_results = ResultInfo {
+						results_url: results_url.unwrap_or_default(),
+						results_hash: results_hash.unwrap_or_default(),
+					};
+					// TODO: Is it fine to override this on every bulk payout?
+					<FinalResults>::insert(id, new_results);
+				}
+				let (reputation_fee, recording_fee, final_amounts) = Self::finalize_payouts(&escrow, &amounts);
+				
 				let address = escrow.escrow_address.clone();
-				// TODO: It seems easy to end up in inconsistent states. --> clarify requirements
-				bulk_paid = hmtoken::Module::<T>::do_transfer(address.clone(), escrow.reputation_oracle.clone(), reputation_fee).is_ok() && hmtoken::Module::<T>::do_transfer(address.clone(), escrow.recording_oracle.clone(), recording_fee).is_ok();
-			}
-			let balance = Self::get_balance(&escrow);
-			if bulk_paid {
+				hmtoken::Module::<T>::do_transfer_bulk(address.clone(), recipients, final_amounts)?;
+				hmtoken::Module::<T>::do_transfer(address.clone(), escrow.reputation_oracle.clone(), reputation_fee)?;
+				hmtoken::Module::<T>::do_transfer(address, escrow.recording_oracle.clone(), recording_fee)?;
+
+				let balance = Self::get_balance(&escrow);
 				if escrow.status == EscrowStatus::Pending {
 					escrow.status = EscrowStatus::Partial;
 				}
 				if balance == 0.into() && escrow.status == EscrowStatus::Partial {
 					escrow.status = EscrowStatus::Paid;
 				}
-			}
-			Self::deposit_event(RawEvent::BulkPayout(bulk_paid));
+				<Escrows<T>>::insert(id, escrow);
+				Self::deposit_event(RawEvent::BulkPayout(id, tx_id));
+				Ok(())
+			});
 		}
 	}
 }

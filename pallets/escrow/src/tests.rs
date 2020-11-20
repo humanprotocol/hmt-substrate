@@ -127,14 +127,17 @@ fn abort_positive_tests() {
 	new_test_ext().execute_with(|| {
 		let sender = 1;
 		let handlers = vec![1, 2];
-		let escrow = create_base_escrow(0, sender, handlers);
-		assert_ok!(HmToken::transfer(Origin::signed(1), escrow.escrow_address, 100));
-		let balance_before = HmToken::balance(1);
-		assert_ok!(Escrow::abort(Origin::signed(1), 0));
-		let balance_after = HmToken::balance(1);
+		let id = 0;
+		let escrow = create_base_escrow(id, sender, handlers);
+		assert!(Escrow::is_trusted_handler(id, sender));
+		assert_ok!(HmToken::transfer(Origin::signed(sender), escrow.escrow_address, 100));
+		let balance_before = HmToken::balance(sender);
+		assert_ok!(Escrow::abort(Origin::signed(sender), id));
+		let balance_after = HmToken::balance(sender);
 
-		assert_eq!(Escrow::escrow(0), None);
+		assert_eq!(Escrow::escrow(id), None);
 		assert_eq!((balance_after - balance_before), 100);
+		assert!(!Escrow::is_trusted_handler(id, sender));
 	});
 }
 #[test]
@@ -158,10 +161,11 @@ fn cancel_positive_tests() {
 	new_test_ext().execute_with(|| {
 		let sender = 1;
 		let handlers = vec![1, 2];
-		let escrow = create_base_escrow(0, sender, handlers);
+		let id = 0;
+		let escrow = create_base_escrow(id, sender, handlers);
 		assert_ok!(HmToken::transfer(Origin::signed(1), escrow.escrow_address, 100));
-		assert_ok!(Escrow::cancel(Origin::signed(1), 0));
-		assert_eq!(Escrow::escrow(0).unwrap().status, EscrowStatus::Cancelled);
+		assert_ok!(Escrow::cancel(Origin::signed(1), id));
+		assert_eq!(Escrow::escrow(id).unwrap().status, EscrowStatus::Cancelled);
 	});
 }
 
