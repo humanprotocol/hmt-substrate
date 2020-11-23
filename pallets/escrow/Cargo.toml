@@ -21,7 +21,7 @@ version = '1.3.4'
 [dependencies]
 frame-support = { default-features = false, version = '2.0.0' }
 frame-system = { default-features = false, version = '2.0.0' }
-pallet-hmtoken = { default-features = false, path = '../hmtoken' }
+pallet-balances = { default-features = false, version = '2.0.0' }
 pallet-timestamp = { default-features = false, version = '2.0.0'}
 sp-runtime = { default-features = false, version = '2.0.0' }
 sp-std = { default-features = false, version = '2.0.0' }
@@ -36,7 +36,7 @@ std = [
     'codec/std',
     'frame-support/std',
     'frame-system/std',
-    'pallet-hmtoken/std',
+    'pallet-balances/std',
     'pallet-timestamp/std',
     'sp-runtime/std',
 ]

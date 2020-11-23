@@ -40,7 +40,6 @@ pub use frame_support::{
 
 /// Import the pallets.
 pub use pallet_escrow;
-pub use pallet_hmtoken;
 pub use pallet_kvstore;
 
 mod weights;
@@ -283,14 +282,6 @@ parameter_types! {
 	pub const BulkBalanceLimit: Balance = 1_000_000_000 * 1_000_000_000_000_000;
 }
 
-impl pallet_hmtoken::Trait for Runtime {
-	type Event = Event;
-	type Balance = Balance;
-	type BulkAccountsLimit = BulkAccountsLimit;
-	type BulkBalanceLimit = BulkBalanceLimit;
-	type WeightInfo = weights::pallet_hmtoken::WeightInfo;
-}
-
 parameter_types! {
 	pub const StandardDuration: Moment = 8_640_000;
 }
@@ -299,6 +290,9 @@ impl pallet_escrow::Trait for Runtime {
 	type Event = Event;
 	type StandardDuration = StandardDuration;
 	type StringLimit = StringLimit;
+	type Currency = Balances;
+	type BulkAccountsLimit = BulkAccountsLimit;
+	type BulkBalanceLimit = BulkBalanceLimit;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -317,7 +311,6 @@ construct_runtime!(
 		TransactionPayment: pallet_transaction_payment::{Module, Storage},
 		Sudo: pallet_sudo::{Module, Call, Config<T>, Storage, Event<T>},
 		KVStore: pallet_kvstore::{Module, Call, Storage, Event<T>},
-		HMToken: pallet_hmtoken::{Module, Call, Storage, Event<T>, Config<T>},
 		Escrow: pallet_escrow::{Module, Call, Storage, Event<T>}
 	}
 );

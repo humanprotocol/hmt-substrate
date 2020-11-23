@@ -6,7 +6,7 @@ use frame_support::{
 	dispatch::{DispatchError, DispatchResult},
 	ensure,
 	storage::{with_transaction, TransactionOutcome},
-	traits::Get,
+	traits::{Get, Currency, ExistenceRequirement::AllowDeath},
 };
 use frame_system::ensure_signed;
 use sp_runtime::{
@@ -21,7 +21,6 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
-use pallet_hmtoken as hmtoken;
 use pallet_timestamp as timestamp;
 
 pub type EscrowId = u128;
@@ -55,16 +54,6 @@ pub enum EscrowStatus {
 	Cancelled,
 }
 
-/// Generate an account id from an escrow id, a url and a hash.
-pub fn generate_account_id<T: Trait>(id: EscrowId, url: Vec<u8>, hash: Vec<u8>) -> T::AccountId {
-	let mut data = vec![];
-	data.extend(id.encode());
-	data.extend(url);
-	data.extend(hash);
-	let data_hash = T::Hashing::hash(&data);
-	T::AccountId::decode(&mut data_hash.as_ref()).unwrap_or_default()
-}
-
 // Copied from ORML because the built-in `transactional` attribute doesn't work correctly in FRAME 2.0
 pub fn with_transaction_result<R>(f: impl FnOnce() -> Result<R, DispatchError>) -> Result<R, DispatchError> {
 	with_transaction(|| {
@@ -77,11 +66,26 @@ pub fn with_transaction_result<R>(f: impl FnOnce() -> Result<R, DispatchError>) 
 	})
 }
 
-pub trait Trait: frame_system::Trait + timestamp::Trait + hmtoken::Trait {
+/// Generate an account id from an escrow id, a url and a hash.
+pub fn generate_account_id<T: Trait>(id: EscrowId, url: Vec<u8>, hash: Vec<u8>) -> T::AccountId {
+	let mut data = vec![];
+	data.extend(id.encode());
+	data.extend(url);
+	data.extend(hash);
+	let data_hash = T::Hashing::hash(&data);
+	T::AccountId::decode(&mut data_hash.as_ref()).unwrap_or_default()
+}
+
+pub trait Trait: frame_system::Trait + timestamp::Trait {
 	type Event: From<Event<Self>> + Into<<Self as frame_system::Trait>::Event>;
 	type StandardDuration: Get<Self::Moment>;
 	type StringLimit: Get<usize>;
+	type Currency: Currency<Self::AccountId>;
+	type BulkBalanceLimit: Get<BalanceOf<Self>>;
+	type BulkAccountsLimit: Get<usize>;
 }
+
+pub type BalanceOf<T> = <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
 
 decl_storage! {
 	trait Store for Module<T: Trait> as Escrow {
@@ -120,6 +124,12 @@ decl_error! {
 		EscrowExpired,
 		EscrowNotPaid,
 		EscrowClosed,
+		/// Spenders and values length do not match in bulk transfer
+        MismatchBulkTransfer,
+        /// Too many spenders in the bulk transfer function
+        TooManyTos,
+        /// Transfer is too big for bulk transfer
+        TransferTooBig
 	}
 }
 
@@ -177,7 +187,7 @@ decl_module! {
 			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 			let balance = Self::get_balance(&escrow);
 			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
-			hmtoken::Module::<T>::do_transfer(escrow.escrow_address.clone(), escrow.canceller.clone(), balance)?;
+			T::Currency::transfer(&escrow.escrow_address.clone(), &escrow.canceller.clone(), balance, AllowDeath)?;
 			<Escrows<T>>::remove(id);
 			<TrustedHandlers<T>>::remove_prefix(id);
 		}
@@ -191,8 +201,7 @@ decl_module! {
 			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 			let balance = Self::get_balance(&escrow);
 			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
-
-			hmtoken::Module::<T>::do_transfer(escrow.escrow_address.clone(), escrow.canceller.clone(), balance)?;
+			T::Currency::transfer(&escrow.escrow_address.clone(), &escrow.canceller.clone(), balance, AllowDeath)?;
 			escrow.status = EscrowStatus::Cancelled;
 			<Escrows<T>>::insert(id, escrow);
 		}
@@ -223,7 +232,7 @@ decl_module! {
 		fn bulk_payout(origin,
 			id: EscrowId,
 			recipients: Vec<T::AccountId>,
-			amounts: Vec<T::Balance>,
+			amounts: Vec<BalanceOf<T>>,
 			results_url: Option<Vec<u8>>,
 			results_hash: Option<Vec<u8>>,
 			tx_id: u128
@@ -237,7 +246,7 @@ decl_module! {
 				ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
 				ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 
-				let mut sum: T::Balance = 0.into();
+				let mut sum: BalanceOf<T> = 0.into();
 				for a in amounts.iter() {
 					sum = sum.saturating_add(*a);
 				}
@@ -255,10 +264,10 @@ decl_module! {
 				let (reputation_fee, recording_fee, final_amounts) = Self::finalize_payouts(&escrow, &amounts);
 
 				let address = escrow.escrow_address.clone();
-
-				hmtoken::Module::<T>::do_transfer(address.clone(), escrow.reputation_oracle.clone(), reputation_fee)?;
-				hmtoken::Module::<T>::do_transfer(address.clone(), escrow.recording_oracle.clone(), recording_fee)?;
-				hmtoken::Module::<T>::do_transfer_bulk(address, recipients, final_amounts)?;
+				
+				T::Currency::transfer(&address.clone(), &escrow.reputation_oracle.clone(), reputation_fee, AllowDeath)?;
+				T::Currency::transfer(&address.clone(), &escrow.recording_oracle.clone(), recording_fee, AllowDeath)?;
+				Self::do_transfer_bulk(address, recipients, final_amounts)?;
 
 				let balance = Self::get_balance(&escrow);
 				if escrow.status == EscrowStatus::Pending {
@@ -276,23 +285,23 @@ decl_module! {
 }
 
 impl<T: Trait> Module<T> {
-	fn add_trusted_handlers(id: EscrowId, trusted: Vec<T::AccountId>) {
+	pub(crate) fn add_trusted_handlers(id: EscrowId, trusted: Vec<T::AccountId>) {
 		for trust in trusted {
 			<TrustedHandlers<T>>::insert(id, trust, true);
 		}
 	}
 
-	pub fn get_balance(target_escrow: &EscrowInfo<T::Moment, T::AccountId>) -> T::Balance {
-		hmtoken::Module::<T>::balance(target_escrow.escrow_address.clone())
+	pub(crate) fn get_balance(target_escrow: &EscrowInfo<T::Moment, T::AccountId>) -> BalanceOf<T> {
+		T::Currency::free_balance(&target_escrow.escrow_address)
 	}
 
-	fn finalize_payouts(
+	pub(crate) fn finalize_payouts(
 		escrow: &EscrowInfo<T::Moment, T::AccountId>,
-		amounts: &Vec<T::Balance>,
-	) -> (T::Balance, T::Balance, Vec<T::Balance>) {
-		let mut reputation_fee_total: T::Balance = 0.into();
+		amounts: &Vec<BalanceOf<T>>,
+	) -> (BalanceOf<T>, BalanceOf<T>, Vec<BalanceOf<T>>) {
+		let mut reputation_fee_total: BalanceOf<T> = 0.into();
 		let reputation_stake = escrow.reputation_oracle_stake;
-		let mut recording_fee_total: T::Balance = 0.into();
+		let mut recording_fee_total: BalanceOf<T> = 0.into();
 		let recording_stake = escrow.recording_oracle_stake;
 		let final_amounts = amounts
 			.iter()
@@ -308,4 +317,23 @@ impl<T: Trait> Module<T> {
 			.collect();
 		(reputation_fee_total, recording_fee_total, final_amounts)
 	}
+
+	pub(crate) fn do_transfer_bulk(
+        from: T::AccountId,
+        tos: Vec<T::AccountId>,
+        values: Vec<BalanceOf<T>>,
+    ) -> DispatchResult
+    {
+        ensure!(tos.len() <= T::BulkAccountsLimit::get(), Error::<T>::TooManyTos);
+        ensure!(tos.len() == values.len(), Error::<T>::MismatchBulkTransfer);
+        let mut sum: BalanceOf<T> = 0.into();
+        for v in values.iter() {
+            sum = sum.saturating_add(*v);
+        }
+        ensure!(sum <= T::BulkBalanceLimit::get(), Error::<T>::TransferTooBig);
+        for (to, value) in tos.into_iter().zip(values.into_iter()) {
+            T::Currency::transfer(&from, &to, value, AllowDeath)?;
+        }
+        Ok(())
+    }
 }

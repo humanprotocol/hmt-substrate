@@ -1,5 +1,5 @@
 use crate::{
-	generate_account_id, hmtoken, mock::*, Error, EscrowId, EscrowInfo, EscrowStatus, Escrows, RawEvent, ResultInfo,
+	generate_account_id, mock::*, Error, EscrowId, EscrowInfo, EscrowStatus, Escrows, RawEvent, ResultInfo,
 	Trait, TrustedHandlers,
 };
 use frame_support::{
@@ -157,10 +157,10 @@ fn abort_positive_tests() {
 		let id = 0;
 		let escrow = store_default_escrow(id, sender, handlers);
 		assert!(Escrow::is_trusted_handler(id, sender));
-		assert_ok!(HmToken::transfer(Origin::signed(sender), escrow.escrow_address, 100));
-		let balance_before = HmToken::balance(sender);
+		assert_ok!(Balances::transfer(Origin::signed(sender), escrow.escrow_address, 100));
+		let balance_before = Balances::free_balance(sender);
 		assert_ok!(Escrow::abort(Origin::signed(sender), id));
-		let balance_after = HmToken::balance(sender);
+		let balance_after = Balances::free_balance(sender);
 
 		assert_eq!(Escrow::escrow(id), None);
 		assert_eq!((balance_after - balance_before), 100);
@@ -192,7 +192,7 @@ fn cancel_positive_tests() {
 		let handlers = vec![1, 2];
 		let id = 0;
 		let escrow = store_default_escrow(id, sender, handlers);
-		assert_ok!(HmToken::transfer(Origin::signed(1), escrow.escrow_address, 100));
+		assert_ok!(Balances::transfer(Origin::signed(1), escrow.escrow_address, 100));
 		assert_ok!(Escrow::cancel(Origin::signed(1), id));
 		assert_eq!(Escrow::escrow(id).unwrap().status, EscrowStatus::Cancelled);
 	});
@@ -312,7 +312,7 @@ fn bulk_payout_positive_tests() {
 		let url = b"results.url".to_vec();
 		let hash = b"0xdev".to_vec();
 		let tx_id = 42;
-		assert_ok!(HmToken::transfer(Origin::signed(1), escrow.escrow_address, 40));
+		assert_ok!(Balances::transfer(Origin::signed(1), escrow.escrow_address, 40));
 		assert_ok!(Escrow::bulk_payout(
 			Origin::signed(1),
 			id,
@@ -323,10 +323,10 @@ fn bulk_payout_positive_tests() {
 			tx_id
 		));
 		assert_last_event::<Test>(RawEvent::<Test>::BulkPayout(id, tx_id).into());
-		assert_eq!(HmToken::balance(rep_oracle), 2);
-		assert_eq!(HmToken::balance(rec_oracle), 2);
-		assert_eq!(HmToken::balance(recipients[0]), 8);
-		assert_eq!(HmToken::balance(recipients[1]), 8);
+		assert_eq!(Balances::free_balance(rep_oracle), 2);
+		assert_eq!(Balances::free_balance(rec_oracle), 2);
+		assert_eq!(Balances::free_balance(recipients[0]), 8);
+		assert_eq!(Balances::free_balance(recipients[1]), 8);
 
 		let results_url = url.clone();
 		let results_hash = hash.clone();
@@ -411,7 +411,7 @@ fn bulk_payout_negative_tests() {
 			),
 			Error::<Test>::OutOfFunds
 		);
-		assert_ok!(HmToken::transfer(Origin::signed(1), escrow.escrow_address, 10));
+		assert_ok!(Balances::transfer(Origin::signed(1), escrow.escrow_address, 10));
 		assert_noop!(
 			Escrow::bulk_payout(
 				Origin::signed(1),
@@ -425,7 +425,7 @@ fn bulk_payout_negative_tests() {
 			Error::<Test>::OutOfFunds
 		);
 		recipients.push(7);
-		assert_ok!(HmToken::transfer(Origin::signed(1), escrow.escrow_address, 20));
+		assert_ok!(Balances::transfer(Origin::signed(1), escrow.escrow_address, 20));
 		assert_noop!(
 			Escrow::bulk_payout(
 				Origin::signed(1),
@@ -436,11 +436,11 @@ fn bulk_payout_negative_tests() {
 				Some(hash.clone()),
 				tx_id
 			),
-			hmtoken::Error::<Test>::MismatchBulkTransfer
+			Error::<Test>::MismatchBulkTransfer
 		);
 		// no payout on failed bulk
-		assert_eq!(HmToken::balance(rep_oracle), 0);
-		assert_eq!(HmToken::balance(rec_oracle), 0);
+		assert_eq!(Balances::free_balance(rep_oracle), 0);
+		assert_eq!(Balances::free_balance(rec_oracle), 0);
 
 		set_status(id, EscrowStatus::Paid).expect("setting status should work");
 		assert_noop!(
@@ -456,4 +456,66 @@ fn bulk_payout_negative_tests() {
 			Error::<Test>::AlreadyPaid
 		);
 	})
+}
+
+#[test]
+fn bulk_transfer_works() {
+	new_test_ext().execute_with(|| {
+		let amount: Balance = 10;
+		let new_balance = 1000 - amount * 2;
+		let from = 1;
+		let first_rec = 2;
+		let second_rec = 3;
+		assert_ok!(Escrow::do_transfer_bulk(
+			from,
+			vec![first_rec, second_rec],
+			vec![amount, amount],
+		));
+		assert_eq!(Balances::free_balance(from), new_balance);
+		assert_eq!(Balances::free_balance(first_rec), amount);
+		assert_eq!(Balances::free_balance(second_rec), amount);
+	});
+}
+
+#[test]
+fn bulk_transfer_fails() {
+	new_test_ext().execute_with(|| {
+		let amount: Balance = 500;
+		let from = 1;
+		let first_rec = 2;
+		let second_rec = 3;
+		assert_noop!(
+			Escrow::do_transfer_bulk(
+				from,
+				vec![first_rec],
+				vec![amount, amount],
+			),
+			Error::<Test>::MismatchBulkTransfer
+		);
+		assert_noop!(
+			Escrow::do_transfer_bulk(
+				from,
+				vec![first_rec, second_rec],
+				vec![amount],
+			),
+			Error::<Test>::MismatchBulkTransfer
+		);
+
+		assert_noop!(
+			Escrow::do_transfer_bulk(
+				from,
+				vec![first_rec; 11],
+				vec![amount; 11],
+			),
+			Error::<Test>::TooManyTos
+		);
+		assert_noop!(
+			Escrow::do_transfer_bulk(
+				from,
+				vec![first_rec, second_rec],
+				vec![amount, amount],
+			),
+			Error::<Test>::TransferTooBig
+		);
+	});
 }

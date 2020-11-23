@@ -26,7 +26,6 @@ serde = { features = ['derive'], optional = true, version = '1.0.101' }
 
 # local dependencies
 pallet-escrow = { path = '../pallets/escrow', default-features = false, version = '2.0.0' }
-pallet-hmtoken = { path = '../pallets/hmtoken', default-features = false, version = '2.0.0' }
 pallet-kvstore = { path = '../pallets/kvstore', default-features = false, version = '2.0.0' }
 
 # Substrate dependencies
@@ -66,7 +65,6 @@ runtime-benchmarks = [
     'frame-system/runtime-benchmarks',
     'pallet-balances/runtime-benchmarks',
     'pallet-kvstore/runtime-benchmarks',
-    'pallet-hmtoken/runtime-benchmarks',
     'pallet-timestamp/runtime-benchmarks',
     'sp-runtime/runtime-benchmarks',
 ]
@@ -81,7 +79,6 @@ std = [
     'pallet-balances/std',
     'pallet-escrow/std',
     'pallet-grandpa/std',
-    'pallet-hmtoken/std',
     'pallet-kvstore/std',
     'pallet-randomness-collective-flip/std',
     'pallet-sudo/std',

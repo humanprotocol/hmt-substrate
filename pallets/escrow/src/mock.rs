@@ -24,6 +24,7 @@ parameter_types! {
 }
 
 pub type AccountId = u64;
+pub type Balance = u64;
 
 impl system::Trait for Test {
 	type BaseCallFilter = ();
@@ -47,24 +48,24 @@ impl system::Trait for Test {
 	type AvailableBlockRatio = AvailableBlockRatio;
 	type Version = ();
 	type PalletInfo = ();
-	type AccountData = ();
+	type AccountData = pallet_balances::AccountData<Balance>;
 	type OnNewAccount = ();
 	type OnKilledAccount = ();
 	type SystemWeightInfo = ();
 }
 
 parameter_types! {
-	pub const BulkAccountsLimit: usize = 10;
-	pub const BulkBalanceLimit: u128 = 999;
-
+	pub const ExistentialDeposit: Balance = 0;
 }
 
-impl pallet_hmtoken::Trait for Test {
-	type Event = ();
-	type Balance = u128;
-	type BulkAccountsLimit = BulkAccountsLimit;
-	type BulkBalanceLimit = BulkBalanceLimit;
+impl pallet_balances::Trait for Test {
+	type Balance = Balance;
+    type Event = ();
+    type DustRemoval = ();
+    type ExistentialDeposit = ExistentialDeposit;
+    type AccountStore = System;
 	type WeightInfo = ();
+	type MaxLocks = ();
 }
 
 parameter_types! {
@@ -84,27 +85,28 @@ impl pallet_timestamp::Trait for Test {
 parameter_types! {
 	pub const StandardDuration: Moment = 1000;
 	pub const StringLimit: usize = 10;
+	pub const BulkAccountsLimit: usize = 10;
+	pub const BulkBalanceLimit: Balance = 999;
 }
 
 impl Trait for Test {
 	type Event = ();
 	type StandardDuration = StandardDuration;
 	type StringLimit = StringLimit;
+	type BulkAccountsLimit = BulkAccountsLimit;
+	type BulkBalanceLimit = BulkBalanceLimit;
+	type Currency = pallet_balances::Module<Test>;
 }
 
 pub type Escrow = Module<Test>;
-pub type HmToken = pallet_hmtoken::Module<Test>;
 pub type System = system::Module<Test>;
+pub type Balances = pallet_balances::Module<Test>;
 
 // Build genesis storage according to the mock runtime.
 pub fn new_test_ext() -> sp_io::TestExternalities {
 	let mut storage = system::GenesisConfig::default().build_storage::<Test>().unwrap();
-	pallet_hmtoken::GenesisConfig::<Test> {
-		total_supply: 1_000,
-		name: b"Human Protocol Token".to_vec(),
-		symbol: b"HMT".to_vec(),
-		decimals: 15, // ignored in the UI for now
-		initial_account: 1,
+	pallet_balances::GenesisConfig::<Test> {
+		balances: vec![(1, 1_000)],
 	}
 	.assimilate_storage(&mut storage)
 	.unwrap();
