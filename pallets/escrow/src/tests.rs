@@ -245,7 +245,11 @@ fn complete_negative_tests() {
 			Escrow::complete(Origin::signed(sender), 0),
 			Error::<Test>::EscrowNotPaid
 		);
-		// TODO add an expired check
+		Timestamp::set_timestamp(1001);
+		assert_noop!(
+			Escrow::complete(Origin::signed(sender), 0),
+			Error::<Test>::EscrowExpired
+		);
 	});
 }
 
@@ -287,7 +291,11 @@ fn store_results_negative_tests() {
 			Escrow::store_results(Origin::signed(1), id, url.clone(), hash.clone()),
 			Error::<Test>::EscrowClosed
 		);
-		// TODO add an expired check
+		Timestamp::set_timestamp(1001);
+		assert_noop!(
+			Escrow::store_results(Origin::signed(1), id, url.clone(), hash.clone()),
+			Error::<Test>::EscrowExpired
+		);
 	});
 }
 
@@ -454,6 +462,19 @@ fn bulk_payout_negative_tests() {
 				tx_id
 			),
 			Error::<Test>::AlreadyPaid
+		);
+		Timestamp::set_timestamp(1001);
+		assert_noop!(
+			Escrow::bulk_payout(
+				Origin::signed(1),
+				id,
+				recipients.clone(),
+				amounts.clone(),
+				Some(url.clone()),
+				Some(hash.clone()),
+				tx_id
+			),
+			Error::<Test>::EscrowExpired
 		);
 	})
 }

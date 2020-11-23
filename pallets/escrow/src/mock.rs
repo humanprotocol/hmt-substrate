@@ -101,6 +101,7 @@ impl Trait for Test {
 pub type Escrow = Module<Test>;
 pub type System = system::Module<Test>;
 pub type Balances = pallet_balances::Module<Test>;
+pub type Timestamp = pallet_timestamp::Module<Test>;
 
 // Build genesis storage according to the mock runtime.
 pub fn new_test_ext() -> sp_io::TestExternalities {
