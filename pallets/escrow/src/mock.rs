@@ -23,7 +23,7 @@ parameter_types! {
 	pub const AvailableBlockRatio: Perbill = Perbill::from_percent(75);
 }
 
-pub type AccountId = u64;
+pub type AccountId = u128;
 pub type Balance = u64;
 
 impl system::Trait for Test {
@@ -84,7 +84,7 @@ impl pallet_timestamp::Trait for Test {
 
 parameter_types! {
 	pub const StandardDuration: Moment = 1000;
-	pub const StringLimit: usize = 10;
+	pub const StringLimit: usize = 100;
 	pub const BulkAccountsLimit: usize = 10;
 	pub const BulkBalanceLimit: Balance = 999;
 }

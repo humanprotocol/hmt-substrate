@@ -10,8 +10,8 @@ use frame_support::{
 };
 use frame_system::ensure_signed;
 use sp_runtime::{
-	traits::{Hash, Saturating},
-	Percent,
+	traits::{Hash, Saturating, AccountIdConversion},
+	ModuleId, Percent,
 };
 use sp_std::prelude::*;
 
@@ -24,6 +24,8 @@ mod tests;
 use pallet_timestamp as timestamp;
 
 pub type EscrowId = u128;
+
+const MODULE_ID: ModuleId = ModuleId(*b"escrowhp");
 
 #[derive(Clone, Encode, Decode, Debug, PartialEq, Eq)]
 pub struct EscrowInfo<Moment, AccountId> {
@@ -64,16 +66,6 @@ pub fn with_transaction_result<R>(f: impl FnOnce() -> Result<R, DispatchError>) 
 			TransactionOutcome::Rollback(res)
 		}
 	})
-}
-
-/// Generate an account id from an escrow id, a url and a hash.
-pub fn generate_account_id<T: Trait>(id: EscrowId, url: Vec<u8>, hash: Vec<u8>) -> T::AccountId {
-	let mut data = vec![];
-	data.extend(id.encode());
-	data.extend(url);
-	data.extend(hash);
-	let data_hash = T::Hashing::hash(&data);
-	T::AccountId::decode(&mut data_hash.as_ref()).unwrap_or_default()
 }
 
 pub trait Trait: frame_system::Trait + timestamp::Trait {
@@ -125,11 +117,12 @@ decl_error! {
 		EscrowNotPaid,
 		EscrowClosed,
 		/// Spenders and values length do not match in bulk transfer
-        MismatchBulkTransfer,
-        /// Too many spenders in the bulk transfer function
-        TooManyTos,
-        /// Transfer is too big for bulk transfer
-        TransferTooBig
+		MismatchBulkTransfer,
+		/// Too many spenders in the bulk transfer function
+		TooManyTos,
+		/// Transfer is too big for bulk transfer
+		TransferTooBig,
+		StringSize,
 	}
 }
 
@@ -151,13 +144,14 @@ decl_module! {
 			recording_oracle_stake: Percent,
 		) {
 			let who = ensure_signed(origin)?;
+			ensure!(manifest_url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
+			ensure!(manifest_hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			// This is fine as `100 + 100 < 256` so no chance of overflow.
 			let total_stake = reputation_oracle_stake.deconstruct().saturating_add(recording_oracle_stake.deconstruct());
 			ensure!(total_stake <= 100, Error::<T>::StakeOutOfBounds);
 			let end_time = <timestamp::Module<T>>::get() + T::StandardDuration::get();
-			// TODO check/limit the size of the url and hash
 			let id = Counter::get();
-			let escrow_address = generate_account_id::<T>(id, manifest_url.clone(), manifest_hash.clone());
+			let escrow_address = Self::account_id_for(id);
 			let new_escrow = EscrowInfo {
 				status: EscrowStatus::Pending,
 				end_time,
@@ -221,6 +215,8 @@ decl_module! {
 		fn store_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
 			// TODO: We will probably want to limit the result size as well.
 			let who = ensure_signed(origin)?;
+			ensure!(url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
+			ensure!(hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
 			let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 			ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
@@ -239,6 +235,8 @@ decl_module! {
 		) -> DispatchResult {
 			with_transaction_result(|| -> DispatchResult {
 				let who = ensure_signed(origin)?;
+				ensure!(results_url.as_ref().map(|u| u.len()).unwrap_or_default() <= T::StringLimit::get(), Error::<T>::StringSize);
+				ensure!(results_hash.as_ref().map(|h| h.len()).unwrap_or_default() <= T::StringLimit::get(), Error::<T>::StringSize);
 				ensure!(Self::is_trusted_handler(id, &who), Error::<T>::NonTrustedAccount);
 				let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 				ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
@@ -285,6 +283,10 @@ decl_module! {
 }
 
 impl<T: Trait> Module<T> {
+	pub(crate) fn account_id_for(id: EscrowId) -> T::AccountId {
+		MODULE_ID.into_sub_account(id)
+	}
+	
 	pub(crate) fn add_trusted_handlers(id: EscrowId, trusted: Vec<T::AccountId>) {
 		for trust in trusted {
 			<TrustedHandlers<T>>::insert(id, trust, true);
@@ -319,21 +321,21 @@ impl<T: Trait> Module<T> {
 	}
 
 	pub(crate) fn do_transfer_bulk(
-        from: T::AccountId,
-        tos: Vec<T::AccountId>,
-        values: Vec<BalanceOf<T>>,
-    ) -> DispatchResult
-    {
-        ensure!(tos.len() <= T::BulkAccountsLimit::get(), Error::<T>::TooManyTos);
-        ensure!(tos.len() == values.len(), Error::<T>::MismatchBulkTransfer);
-        let mut sum: BalanceOf<T> = 0.into();
-        for v in values.iter() {
-            sum = sum.saturating_add(*v);
-        }
-        ensure!(sum <= T::BulkBalanceLimit::get(), Error::<T>::TransferTooBig);
-        for (to, value) in tos.into_iter().zip(values.into_iter()) {
-            T::Currency::transfer(&from, &to, value, AllowDeath)?;
-        }
-        Ok(())
-    }
+		from: T::AccountId,
+		tos: Vec<T::AccountId>,
+		values: Vec<BalanceOf<T>>,
+	) -> DispatchResult
+	{
+		ensure!(tos.len() <= T::BulkAccountsLimit::get(), Error::<T>::TooManyTos);
+		ensure!(tos.len() == values.len(), Error::<T>::MismatchBulkTransfer);
+		let mut sum: BalanceOf<T> = 0.into();
+		for v in values.iter() {
+			sum = sum.saturating_add(*v);
+		}
+		ensure!(sum <= T::BulkBalanceLimit::get(), Error::<T>::TransferTooBig);
+		for (to, value) in tos.into_iter().zip(values.into_iter()) {
+			T::Currency::transfer(&from, &to, value, AllowDeath)?;
+		}
+		Ok(())
+	}
 }

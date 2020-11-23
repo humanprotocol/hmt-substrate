@@ -1,5 +1,5 @@
 use crate::{
-	generate_account_id, mock::*, Error, EscrowId, EscrowInfo, EscrowStatus, Escrows, RawEvent, ResultInfo,
+	mock::*, Error, EscrowId, EscrowInfo, EscrowStatus, Escrows, RawEvent, ResultInfo,
 	Trait, TrustedHandlers,
 };
 use frame_support::{
@@ -54,6 +54,16 @@ impl EscrowBuilder {
 		self
 	}
 
+	pub fn manifest_url(mut self, u: Vec<u8>) -> Self {
+		self.manifest_url = Some(u);
+		self
+	}
+
+	pub fn manifest_hash(mut self, h: Vec<u8>) -> Self {
+		self.manifest_hash = Some(h);
+		self
+	}
+
 	pub fn build(self) -> EscrowInfo<Moment, AccountId> {
 		let status = self.status.unwrap_or(EscrowStatus::Pending);
 		let canceller = self.canceller.unwrap_or(1);
@@ -64,7 +74,7 @@ impl EscrowBuilder {
 		let reputation_oracle_stake = self.reputation_oracle_stake.unwrap_or(Percent::from_percent(10));
 		let recording_oracle_stake = self.recording_oracle_stake.unwrap_or(Percent::from_percent(10));
 		let id = self.id.unwrap_or(0);
-		let escrow_address = generate_account_id::<Test>(id, manifest_url.clone(), manifest_hash.clone());
+		let escrow_address = Escrow::account_id_for(id);
 		let end_time = 1000;
 		EscrowInfo {
 			status,
@@ -81,9 +91,9 @@ impl EscrowBuilder {
 	}
 }
 
-fn store_escrow(sender: AccountId, handlers: Vec<AccountId>, e: &EscrowInfo<Moment, AccountId>) {
+fn create_escrow(sender: AccountId, handlers: Vec<AccountId>, e: &EscrowInfo<Moment, AccountId>) -> DispatchResult {
 	let i = e.clone();
-	assert_ok!(Escrow::create(
+	Escrow::create(
 		Origin::signed(sender),
 		i.canceller,
 		handlers,
@@ -93,7 +103,11 @@ fn store_escrow(sender: AccountId, handlers: Vec<AccountId>, e: &EscrowInfo<Mome
 		i.recording_oracle,
 		i.reputation_oracle_stake,
 		i.recording_oracle_stake
-	));
+	)
+}
+
+fn store_escrow(sender: AccountId, handlers: Vec<AccountId>, e: &EscrowInfo<Moment, AccountId>) {
+	assert_ok!(create_escrow(sender, handlers, e));
 }
 
 fn store_default_escrow(id: EscrowId, sender: AccountId, handlers: Vec<AccountId>) -> EscrowInfo<Moment, AccountId> {
@@ -146,6 +160,39 @@ fn it_creates_escrow_instance() {
 			Escrow::escrow(0).unwrap().escrow_address,
 			Escrow::escrow(1).unwrap().escrow_address
 		);
+	});
+}
+
+#[test]
+fn create_negative_tests() {
+	new_test_ext().execute_with(|| {
+		let sender = 1;
+		let id = 0;
+		{
+			let handlers = vec![1, 2];
+			let escrow = EscrowBuilder::new()
+				.id(id)
+				.reputation_stake(Percent::from_percent(80))
+				.recording_stake(Percent::from_percent(80))
+				.build();
+			assert_noop!(create_escrow(sender, handlers, &escrow), Error::<Test>::StakeOutOfBounds);
+		}
+		{
+			let handlers = vec![1, 2];
+			let escrow = EscrowBuilder::new()
+				.id(id)
+				.manifest_hash(vec![24; 101])
+				.build();
+			assert_noop!(create_escrow(sender, handlers, &escrow), Error::<Test>::StringSize);
+		}
+		{
+			let handlers = vec![1, 2];
+			let escrow = EscrowBuilder::new()
+				.id(id)
+				.manifest_url(vec![24; 101])
+				.build();
+			assert_noop!(create_escrow(sender, handlers, &escrow), Error::<Test>::StringSize);
+		}
 	});
 }
 
@@ -276,6 +323,8 @@ fn store_results_negative_tests() {
 		let _ = store_default_escrow(id, sender, handlers);
 		let url = b"results.url".to_vec();
 		let hash = b"0xdev".to_vec();
+		let long_url = vec![24; 101];
+		let long_hash = vec![33; 101];
 		assert_noop!(
 			Escrow::store_results(Origin::signed(8), id, url.clone(), hash.clone()),
 			Error::<Test>::NonTrustedAccount
@@ -290,6 +339,14 @@ fn store_results_negative_tests() {
 		assert_noop!(
 			Escrow::store_results(Origin::signed(1), id, url.clone(), hash.clone()),
 			Error::<Test>::EscrowClosed
+		);
+		assert_noop!(
+			Escrow::store_results(Origin::signed(1), id, long_url.clone(), hash.clone()),
+			Error::<Test>::StringSize
+		);
+		assert_noop!(
+			Escrow::store_results(Origin::signed(1), id, url.clone(), long_hash.clone()),
+			Error::<Test>::StringSize
 		);
 		Timestamp::set_timestamp(1001);
 		assert_noop!(
@@ -371,6 +428,8 @@ fn bulk_payout_negative_tests() {
 		let id = 0;
 		let url = b"results.url".to_vec();
 		let hash = b"0xdev".to_vec();
+		let long_url = vec![23; 101];
+		let long_hash = vec![23; 101];
 		let tx_id = 42;
 		let escrow = EscrowBuilder::new()
 			.id(id)
@@ -462,6 +521,30 @@ fn bulk_payout_negative_tests() {
 				tx_id
 			),
 			Error::<Test>::AlreadyPaid
+		);
+		assert_noop!(
+			Escrow::bulk_payout(
+				Origin::signed(1),
+				id,
+				recipients.clone(),
+				amounts.clone(),
+				Some(long_url.clone()),
+				Some(hash.clone()),
+				tx_id
+			),
+			Error::<Test>::StringSize
+		);
+		assert_noop!(
+			Escrow::bulk_payout(
+				Origin::signed(1),
+				id,
+				recipients.clone(),
+				amounts.clone(),
+				Some(url.clone()),
+				Some(long_hash.clone()),
+				tx_id
+			),
+			Error::<Test>::StringSize
 		);
 		Timestamp::set_timestamp(1001);
 		assert_noop!(
