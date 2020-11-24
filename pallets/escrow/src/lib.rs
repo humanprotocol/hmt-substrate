@@ -21,6 +21,8 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+mod benchmarks;
+
 use pallet_timestamp as timestamp;
 
 pub type EscrowId = u128;
@@ -75,6 +77,7 @@ pub trait Trait: frame_system::Trait + timestamp::Trait {
 	type Currency: Currency<Self::AccountId>;
 	type BulkBalanceLimit: Get<BalanceOf<Self>>;
 	type BulkAccountsLimit: Get<usize>;
+	type HandlersLimit: Get<usize>;
 }
 
 pub type BalanceOf<T> = <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
@@ -123,6 +126,7 @@ decl_error! {
 		/// Transfer is too big for bulk transfer
 		TransferTooBig,
 		StringSize,
+		TooManyHandlers,
 	}
 }
 
@@ -146,6 +150,7 @@ decl_module! {
 			let who = ensure_signed(origin)?;
 			ensure!(manifest_url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(manifest_hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
+			ensure!(handlers.len() <= T::HandlersLimit::get(), Error::<T>::TooManyHandlers);
 			// This is fine as `100 + 100 < 256` so no chance of overflow.
 			let total_stake = reputation_oracle_stake.deconstruct().saturating_add(recording_oracle_stake.deconstruct());
 			ensure!(total_stake <= 100, Error::<T>::StakeOutOfBounds);

@@ -87,6 +87,7 @@ parameter_types! {
 	pub const StringLimit: usize = 100;
 	pub const BulkAccountsLimit: usize = 10;
 	pub const BulkBalanceLimit: Balance = 999;
+	pub const HandlersLimit: usize = 100;
 }
 
 impl Trait for Test {
@@ -96,6 +97,7 @@ impl Trait for Test {
 	type BulkAccountsLimit = BulkAccountsLimit;
 	type BulkBalanceLimit = BulkBalanceLimit;
 	type Currency = pallet_balances::Module<Test>;
+	type HandlersLimit = HandlersLimit;
 }
 
 pub type Escrow = Module<Test>;

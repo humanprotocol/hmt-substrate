@@ -143,13 +143,12 @@ fn it_creates_escrow_instance() {
 		let escrow = store_default_escrow(0, sender, handlers.clone());
 		assert_eq!(Escrow::escrow(0), Some(escrow.clone()));
 		assert_eq!(Escrow::counter(), 1);
-		let mut all_handlers = handlers.clone();
-		all_handlers.extend(vec![
+		let all_handlers = [handlers.clone(), vec![
 			escrow.canceller,
 			escrow.reputation_oracle,
 			escrow.recording_oracle,
 			sender,
-		]);
+		]].concat();
 		for handler in all_handlers {
 			assert!(Escrow::is_trusted_handler(0, handler));
 		}
