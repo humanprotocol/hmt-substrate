@@ -21,7 +21,7 @@ struct EscrowBuilder {
 	recording_oracle: Option<AccountId>,
 	reputation_oracle_stake: Option<Percent>,
 	recording_oracle_stake: Option<Percent>,
-	escrow_address: Option<AccountId>,
+	account: Option<AccountId>,
 }
 
 impl EscrowBuilder {
@@ -74,7 +74,7 @@ impl EscrowBuilder {
 		let reputation_oracle_stake = self.reputation_oracle_stake.unwrap_or(Percent::from_percent(10));
 		let recording_oracle_stake = self.recording_oracle_stake.unwrap_or(Percent::from_percent(10));
 		let id = self.id.unwrap_or(0);
-		let escrow_address = Escrow::account_id_for(id);
+		let account = Escrow::account_id_for(id);
 		let end_time = 1000;
 		EscrowInfo {
 			status,
@@ -86,7 +86,7 @@ impl EscrowBuilder {
 			recording_oracle,
 			reputation_oracle_stake,
 			recording_oracle_stake,
-			escrow_address,
+			account,
 		}
 	}
 }
@@ -156,8 +156,8 @@ fn it_creates_escrow_instance() {
 		store_default_escrow(1, sender, handlers);
 		assert_eq!(Escrow::counter(), 2);
 		assert_ne!(
-			Escrow::escrow(0).unwrap().escrow_address,
-			Escrow::escrow(1).unwrap().escrow_address
+			Escrow::escrow(0).unwrap().account,
+			Escrow::escrow(1).unwrap().account
 		);
 	});
 }
@@ -203,7 +203,7 @@ fn abort_positive_tests() {
 		let id = 0;
 		let escrow = store_default_escrow(id, sender, handlers);
 		assert!(Escrow::is_trusted_handler(id, sender));
-		assert_ok!(Balances::transfer(Origin::signed(sender), escrow.escrow_address, 100));
+		assert_ok!(Balances::transfer(Origin::signed(sender), escrow.account, 100));
 		let balance_before = Balances::free_balance(sender);
 		assert_ok!(Escrow::abort(Origin::signed(sender), id));
 		let balance_after = Balances::free_balance(sender);
@@ -238,7 +238,7 @@ fn cancel_positive_tests() {
 		let handlers = vec![1, 2];
 		let id = 0;
 		let escrow = store_default_escrow(id, sender, handlers);
-		assert_ok!(Balances::transfer(Origin::signed(1), escrow.escrow_address, 100));
+		assert_ok!(Balances::transfer(Origin::signed(1), escrow.account, 100));
 		assert_ok!(Escrow::cancel(Origin::signed(1), id));
 		assert_eq!(Escrow::escrow(id).unwrap().status, EscrowStatus::Cancelled);
 	});
@@ -376,7 +376,7 @@ fn bulk_payout_positive_tests() {
 		let url = b"results.url".to_vec();
 		let hash = b"0xdev".to_vec();
 		let tx_id = 42;
-		assert_ok!(Balances::transfer(Origin::signed(1), escrow.escrow_address, 40));
+		assert_ok!(Balances::transfer(Origin::signed(1), escrow.account, 40));
 		assert_ok!(Escrow::bulk_payout(
 			Origin::signed(1),
 			id,
@@ -477,7 +477,7 @@ fn bulk_payout_negative_tests() {
 			),
 			Error::<Test>::OutOfFunds
 		);
-		assert_ok!(Balances::transfer(Origin::signed(1), escrow.escrow_address, 10));
+		assert_ok!(Balances::transfer(Origin::signed(1), escrow.account, 10));
 		assert_noop!(
 			Escrow::bulk_payout(
 				Origin::signed(1),
@@ -491,7 +491,7 @@ fn bulk_payout_negative_tests() {
 			Error::<Test>::OutOfFunds
 		);
 		recipients.push(7);
-		assert_ok!(Balances::transfer(Origin::signed(1), escrow.escrow_address, 20));
+		assert_ok!(Balances::transfer(Origin::signed(1), escrow.account, 20));
 		assert_noop!(
 			Escrow::bulk_payout(
 				Origin::signed(1),

@@ -40,7 +40,7 @@ pub struct EscrowInfo<Moment, AccountId> {
 	reputation_oracle_stake: Percent,
 	recording_oracle_stake: Percent,
 	canceller: AccountId,
-	escrow_address: AccountId,
+	account: AccountId,
 }
 
 #[derive(Clone, Encode, Decode, Debug, PartialEq, Eq)]
@@ -99,8 +99,8 @@ decl_event!(
 	pub enum Event<T> where
 		<T as frame_system::Trait>::AccountId,
 	{
-		/// The escrow is in Pending status \[escrow_id, creator, canceller, manifest_url, manifest_hash\]
-		Pending(EscrowId, AccountId, AccountId, Vec<u8>, Vec<u8>),
+		/// The escrow is in Pending status \[escrow_id, creator, canceller, manifest_url, manifest_hash, escrow_account\]
+		Pending(EscrowId, AccountId, AccountId, Vec<u8>, Vec<u8>, AccountId),
 		IntermediateStorage(EscrowId, Vec<u8>, Vec<u8>),
 		/// Bulk payout was executed. Completion indicated by the boolean
 		BulkPayout(EscrowId, u128),
@@ -156,7 +156,7 @@ decl_module! {
 			ensure!(total_stake <= 100, Error::<T>::StakeOutOfBounds);
 			let end_time = <timestamp::Module<T>>::get() + T::StandardDuration::get();
 			let id = Counter::get();
-			let escrow_address = Self::account_id_for(id);
+			let account = Self::account_id_for(id);
 			let new_escrow = EscrowInfo {
 				status: EscrowStatus::Pending,
 				end_time,
@@ -167,14 +167,14 @@ decl_module! {
 				reputation_oracle_stake,
 				recording_oracle_stake,
 				canceller: canceller.clone(),
-				escrow_address,
+				account: account.clone(),
 			};
 			Counter::set(id + 1);
 			<Escrows<T>>::insert(id, new_escrow);
 			let mut trusted = vec![recording_oracle, reputation_oracle, canceller.clone(), who.clone()];
 			trusted.extend(handlers);
 			Self::add_trusted_handlers(id, trusted);
-			Self::deposit_event(RawEvent::Pending(id, who, canceller, manifest_url, manifest_hash));
+			Self::deposit_event(RawEvent::Pending(id, who, canceller, manifest_url, manifest_hash, account));
 		}
 
 		#[weight = 0]
@@ -186,7 +186,8 @@ decl_module! {
 			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 			let balance = Self::get_balance(&escrow);
 			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
-			T::Currency::transfer(&escrow.escrow_address.clone(), &escrow.canceller.clone(), balance, AllowDeath)?;
+			// TODO: Should this really go to the canceller?
+			T::Currency::transfer(&escrow.account, &escrow.canceller, balance, AllowDeath)?;
 			<Escrows<T>>::remove(id);
 			<TrustedHandlers<T>>::remove_prefix(id);
 		}
@@ -200,7 +201,8 @@ decl_module! {
 			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 			let balance = Self::get_balance(&escrow);
 			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
-			T::Currency::transfer(&escrow.escrow_address.clone(), &escrow.canceller.clone(), balance, AllowDeath)?;
+			// TODO: Should this really go to the canceller?
+			T::Currency::transfer(&escrow.account, &escrow.canceller, balance, AllowDeath)?;
 			escrow.status = EscrowStatus::Cancelled;
 			<Escrows<T>>::insert(id, escrow);
 		}
@@ -218,7 +220,6 @@ decl_module! {
 
 		#[weight = 0]
 		fn store_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
-			// TODO: We will probably want to limit the result size as well.
 			let who = ensure_signed(origin)?;
 			ensure!(url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
@@ -266,7 +267,7 @@ decl_module! {
 				}
 				let (reputation_fee, recording_fee, final_amounts) = Self::finalize_payouts(&escrow, &amounts);
 
-				let address = escrow.escrow_address.clone();
+				let address = escrow.account.clone();
 				
 				T::Currency::transfer(&address.clone(), &escrow.reputation_oracle.clone(), reputation_fee, AllowDeath)?;
 				T::Currency::transfer(&address.clone(), &escrow.recording_oracle.clone(), recording_fee, AllowDeath)?;
@@ -298,8 +299,8 @@ impl<T: Trait> Module<T> {
 		}
 	}
 
-	pub(crate) fn get_balance(target_escrow: &EscrowInfo<T::Moment, T::AccountId>) -> BalanceOf<T> {
-		T::Currency::free_balance(&target_escrow.escrow_address)
+	pub(crate) fn get_balance(escrow: &EscrowInfo<T::Moment, T::AccountId>) -> BalanceOf<T> {
+		T::Currency::free_balance(&escrow.account)
 	}
 
 	pub(crate) fn finalize_payouts(
