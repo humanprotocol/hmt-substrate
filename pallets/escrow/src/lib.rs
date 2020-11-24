@@ -155,26 +155,28 @@ decl_module! {
 			let total_stake = reputation_oracle_stake.deconstruct().saturating_add(recording_oracle_stake.deconstruct());
 			ensure!(total_stake <= 100, Error::<T>::StakeOutOfBounds);
 			let end_time = <timestamp::Module<T>>::get() + T::StandardDuration::get();
+
 			let id = Counter::get();
+			Counter::set(id + 1);
+
+			let mut trusted = vec![&recording_oracle, &reputation_oracle, &canceller, &who];
+			trusted.extend(&handlers);
+			Self::add_trusted_handlers(id, &trusted);
+
 			let account = Self::account_id_for(id);
-			// TODO: Optimize for less cloning? Consider `addTrustedHandlers` via borrows.
 			let new_escrow = EscrowInfo {
 				status: EscrowStatus::Pending,
 				end_time,
 				manifest_url: manifest_url.clone(),
 				manifest_hash: manifest_hash.clone(),
-				reputation_oracle: reputation_oracle.clone(),
-				recording_oracle: recording_oracle.clone(),
+				reputation_oracle: reputation_oracle,
+				recording_oracle: recording_oracle,
 				reputation_oracle_stake,
 				recording_oracle_stake,
 				canceller: canceller.clone(),
 				account: account.clone(),
 			};
-			Counter::set(id + 1);
 			<Escrows<T>>::insert(id, new_escrow);
-			let mut trusted = vec![recording_oracle, reputation_oracle, canceller.clone(), who.clone()];
-			trusted.extend(handlers);
-			Self::add_trusted_handlers(id, trusted);
 			Self::deposit_event(RawEvent::Pending(id, who, canceller, manifest_url, manifest_hash, account));
 		}
 
@@ -295,9 +297,9 @@ impl<T: Trait> Module<T> {
 		MODULE_ID.into_sub_account(id)
 	}
 	
-	pub(crate) fn add_trusted_handlers(id: EscrowId, trusted: Vec<T::AccountId>) {
+	pub(crate) fn add_trusted_handlers(id: EscrowId, trusted: &[&T::AccountId]) {
 		for trust in trusted {
-			<TrustedHandlers<T>>::insert(id, trust, true);
+			<TrustedHandlers<T>>::insert(id, *trust, true);
 		}
 	}
 
