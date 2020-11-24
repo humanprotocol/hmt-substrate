@@ -151,12 +151,13 @@ decl_module! {
 			ensure!(manifest_url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(manifest_hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(handlers.len() <= T::HandlersLimit::get(), Error::<T>::TooManyHandlers);
-			// This is fine as `100 + 100 < 256` so no chance of overflow.
+			// This is fine as `100 + 100 < 256`, so no chance of overflow.
 			let total_stake = reputation_oracle_stake.deconstruct().saturating_add(recording_oracle_stake.deconstruct());
 			ensure!(total_stake <= 100, Error::<T>::StakeOutOfBounds);
 			let end_time = <timestamp::Module<T>>::get() + T::StandardDuration::get();
 			let id = Counter::get();
 			let account = Self::account_id_for(id);
+			// TODO: Optimize for less cloning? Consider `addTrustedHandlers` via borrows.
 			let new_escrow = EscrowInfo {
 				status: EscrowStatus::Pending,
 				end_time,
@@ -243,6 +244,7 @@ decl_module! {
 				let who = ensure_signed(origin)?;
 				ensure!(results_url.as_ref().map(|u| u.len()).unwrap_or_default() <= T::StringLimit::get(), Error::<T>::StringSize);
 				ensure!(results_hash.as_ref().map(|h| h.len()).unwrap_or_default() <= T::StringLimit::get(), Error::<T>::StringSize);
+				// TODO: Extract checks into function?
 				ensure!(Self::is_trusted_handler(id, &who), Error::<T>::NonTrustedAccount);
 				let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 				ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
