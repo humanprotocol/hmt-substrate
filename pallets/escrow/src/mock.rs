@@ -60,10 +60,10 @@ parameter_types! {
 
 impl pallet_balances::Trait for Test {
 	type Balance = Balance;
-    type Event = ();
-    type DustRemoval = ();
-    type ExistentialDeposit = ExistentialDeposit;
-    type AccountStore = System;
+	type Event = ();
+	type DustRemoval = ();
+	type ExistentialDeposit = ExistentialDeposit;
+	type AccountStore = System;
 	type WeightInfo = ();
 	type MaxLocks = ();
 }
@@ -86,7 +86,8 @@ parameter_types! {
 	pub const StandardDuration: Moment = 1000;
 	pub const StringLimit: usize = 100;
 	pub const BulkAccountsLimit: usize = 10;
-	pub const BulkBalanceLimit: Balance = 999;
+	pub const BulkBalanceLimit: Balance = 1_000_000_000;
+	pub const HandlersLimit: usize = 100;
 }
 
 impl Trait for Test {
@@ -96,6 +97,8 @@ impl Trait for Test {
 	type BulkAccountsLimit = BulkAccountsLimit;
 	type BulkBalanceLimit = BulkBalanceLimit;
 	type Currency = pallet_balances::Module<Test>;
+	type HandlersLimit = HandlersLimit;
+	type WeightInfo = ();
 }
 
 pub type Escrow = Module<Test>;

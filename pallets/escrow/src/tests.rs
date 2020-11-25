@@ -1,11 +1,11 @@
 use crate::{
-	mock::*, Error, EscrowId, EscrowInfo, EscrowStatus, Escrows, RawEvent, ResultInfo,
-	Trait, TrustedHandlers,
+	mock::*, Error, EscrowId, EscrowInfo, EscrowStatus, Escrows, RawEvent, ResultInfo, Trait, TrustedHandlers,
 };
 use frame_support::{
 	assert_noop, assert_ok,
 	dispatch::{DispatchError, DispatchResult},
 	storage::{StorageDoubleMap, StorageMap},
+	traits::Currency,
 };
 use frame_system::EventRecord;
 use sp_runtime::Percent;
@@ -21,7 +21,7 @@ struct EscrowBuilder {
 	recording_oracle: Option<AccountId>,
 	reputation_oracle_stake: Option<Percent>,
 	recording_oracle_stake: Option<Percent>,
-	escrow_address: Option<AccountId>,
+	account: Option<AccountId>,
 }
 
 impl EscrowBuilder {
@@ -74,7 +74,7 @@ impl EscrowBuilder {
 		let reputation_oracle_stake = self.reputation_oracle_stake.unwrap_or(Percent::from_percent(10));
 		let recording_oracle_stake = self.recording_oracle_stake.unwrap_or(Percent::from_percent(10));
 		let id = self.id.unwrap_or(0);
-		let escrow_address = Escrow::account_id_for(id);
+		let account = Escrow::account_id_for(id);
 		let end_time = 1000;
 		EscrowInfo {
 			status,
@@ -86,7 +86,7 @@ impl EscrowBuilder {
 			recording_oracle,
 			reputation_oracle_stake,
 			recording_oracle_stake,
-			escrow_address,
+			account,
 		}
 	}
 }
@@ -102,7 +102,7 @@ fn create_escrow(sender: AccountId, handlers: Vec<AccountId>, e: &EscrowInfo<Mom
 		i.reputation_oracle,
 		i.recording_oracle,
 		i.reputation_oracle_stake,
-		i.recording_oracle_stake
+		i.recording_oracle_stake,
 	)
 }
 
@@ -143,23 +143,23 @@ fn it_creates_escrow_instance() {
 		let escrow = store_default_escrow(0, sender, handlers.clone());
 		assert_eq!(Escrow::escrow(0), Some(escrow.clone()));
 		assert_eq!(Escrow::counter(), 1);
-		let mut all_handlers = handlers.clone();
-		all_handlers.extend(vec![
-			escrow.canceller,
-			escrow.reputation_oracle,
-			escrow.recording_oracle,
-			sender,
-		]);
+		let all_handlers = [
+			handlers.clone(),
+			vec![
+				escrow.canceller,
+				escrow.reputation_oracle,
+				escrow.recording_oracle,
+				sender,
+			],
+		]
+		.concat();
 		for handler in all_handlers {
 			assert!(Escrow::is_trusted_handler(0, handler));
 		}
 
 		store_default_escrow(1, sender, handlers);
 		assert_eq!(Escrow::counter(), 2);
-		assert_ne!(
-			Escrow::escrow(0).unwrap().escrow_address,
-			Escrow::escrow(1).unwrap().escrow_address
-		);
+		assert_ne!(Escrow::escrow(0).unwrap().account, Escrow::escrow(1).unwrap().account);
 	});
 }
 
@@ -175,22 +175,19 @@ fn create_negative_tests() {
 				.reputation_stake(Percent::from_percent(80))
 				.recording_stake(Percent::from_percent(80))
 				.build();
-			assert_noop!(create_escrow(sender, handlers, &escrow), Error::<Test>::StakeOutOfBounds);
+			assert_noop!(
+				create_escrow(sender, handlers, &escrow),
+				Error::<Test>::StakeOutOfBounds
+			);
 		}
 		{
 			let handlers = vec![1, 2];
-			let escrow = EscrowBuilder::new()
-				.id(id)
-				.manifest_hash(vec![24; 101])
-				.build();
+			let escrow = EscrowBuilder::new().id(id).manifest_hash(vec![24; 101]).build();
 			assert_noop!(create_escrow(sender, handlers, &escrow), Error::<Test>::StringSize);
 		}
 		{
 			let handlers = vec![1, 2];
-			let escrow = EscrowBuilder::new()
-				.id(id)
-				.manifest_url(vec![24; 101])
-				.build();
+			let escrow = EscrowBuilder::new().id(id).manifest_url(vec![24; 101]).build();
 			assert_noop!(create_escrow(sender, handlers, &escrow), Error::<Test>::StringSize);
 		}
 	});
@@ -204,7 +201,7 @@ fn abort_positive_tests() {
 		let id = 0;
 		let escrow = store_default_escrow(id, sender, handlers);
 		assert!(Escrow::is_trusted_handler(id, sender));
-		assert_ok!(Balances::transfer(Origin::signed(sender), escrow.escrow_address, 100));
+		assert_ok!(Balances::transfer(Origin::signed(sender), escrow.account, 100));
 		let balance_before = Balances::free_balance(sender);
 		assert_ok!(Escrow::abort(Origin::signed(sender), id));
 		let balance_after = Balances::free_balance(sender);
@@ -239,7 +236,7 @@ fn cancel_positive_tests() {
 		let handlers = vec![1, 2];
 		let id = 0;
 		let escrow = store_default_escrow(id, sender, handlers);
-		assert_ok!(Balances::transfer(Origin::signed(1), escrow.escrow_address, 100));
+		assert_ok!(Balances::transfer(Origin::signed(1), escrow.account, 100));
 		assert_ok!(Escrow::cancel(Origin::signed(1), id));
 		assert_eq!(Escrow::escrow(id).unwrap().status, EscrowStatus::Cancelled);
 	});
@@ -377,7 +374,7 @@ fn bulk_payout_positive_tests() {
 		let url = b"results.url".to_vec();
 		let hash = b"0xdev".to_vec();
 		let tx_id = 42;
-		assert_ok!(Balances::transfer(Origin::signed(1), escrow.escrow_address, 40));
+		assert_ok!(Balances::transfer(Origin::signed(1), escrow.account, 40));
 		assert_ok!(Escrow::bulk_payout(
 			Origin::signed(1),
 			id,
@@ -478,7 +475,7 @@ fn bulk_payout_negative_tests() {
 			),
 			Error::<Test>::OutOfFunds
 		);
-		assert_ok!(Balances::transfer(Origin::signed(1), escrow.escrow_address, 10));
+		assert_ok!(Balances::transfer(Origin::signed(1), escrow.account, 10));
 		assert_noop!(
 			Escrow::bulk_payout(
 				Origin::signed(1),
@@ -492,7 +489,7 @@ fn bulk_payout_negative_tests() {
 			Error::<Test>::OutOfFunds
 		);
 		recipients.push(7);
-		assert_ok!(Balances::transfer(Origin::signed(1), escrow.escrow_address, 20));
+		assert_ok!(Balances::transfer(Origin::signed(1), escrow.account, 20));
 		assert_noop!(
 			Escrow::bulk_payout(
 				Origin::signed(1),
@@ -584,41 +581,26 @@ fn bulk_transfer_works() {
 #[test]
 fn bulk_transfer_fails() {
 	new_test_ext().execute_with(|| {
-		let amount: Balance = 500;
+		let amount: Balance = 500_000_001;
 		let from = 1;
 		let first_rec = 2;
 		let second_rec = 3;
+		<Test as Trait>::Currency::make_free_balance_be(&from, 1_000_000_000);
 		assert_noop!(
-			Escrow::do_transfer_bulk(
-				from,
-				vec![first_rec],
-				vec![amount, amount],
-			),
+			Escrow::do_transfer_bulk(from, vec![first_rec], vec![amount, amount],),
 			Error::<Test>::MismatchBulkTransfer
 		);
 		assert_noop!(
-			Escrow::do_transfer_bulk(
-				from,
-				vec![first_rec, second_rec],
-				vec![amount],
-			),
+			Escrow::do_transfer_bulk(from, vec![first_rec, second_rec], vec![amount],),
 			Error::<Test>::MismatchBulkTransfer
 		);
 
 		assert_noop!(
-			Escrow::do_transfer_bulk(
-				from,
-				vec![first_rec; 11],
-				vec![amount; 11],
-			),
+			Escrow::do_transfer_bulk(from, vec![first_rec; 11], vec![amount; 11],),
 			Error::<Test>::TooManyTos
 		);
 		assert_noop!(
-			Escrow::do_transfer_bulk(
-				from,
-				vec![first_rec, second_rec],
-				vec![amount, amount],
-			),
+			Escrow::do_transfer_bulk(from, vec![first_rec, second_rec], vec![amount, amount],),
 			Error::<Test>::TransferTooBig
 		);
 	});

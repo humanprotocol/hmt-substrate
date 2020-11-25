@@ -6,11 +6,12 @@ use frame_support::{
 	dispatch::{DispatchError, DispatchResult},
 	ensure,
 	storage::{with_transaction, TransactionOutcome},
-	traits::{Get, Currency, ExistenceRequirement::AllowDeath},
+	traits::{Currency, ExistenceRequirement::AllowDeath, Get},
+	weights::Weight,
 };
 use frame_system::ensure_signed;
 use sp_runtime::{
-	traits::{Hash, Saturating, AccountIdConversion},
+	traits::{AccountIdConversion, Saturating},
 	ModuleId, Percent,
 };
 use sp_std::prelude::*;
@@ -20,6 +21,8 @@ mod mock;
 
 #[cfg(test)]
 mod tests;
+
+mod benchmarks;
 
 use pallet_timestamp as timestamp;
 
@@ -38,7 +41,7 @@ pub struct EscrowInfo<Moment, AccountId> {
 	reputation_oracle_stake: Percent,
 	recording_oracle_stake: Percent,
 	canceller: AccountId,
-	escrow_address: AccountId,
+	account: AccountId,
 }
 
 #[derive(Clone, Encode, Decode, Debug, PartialEq, Eq)]
@@ -68,6 +71,41 @@ pub fn with_transaction_result<R>(f: impl FnOnce() -> Result<R, DispatchError>) 
 	})
 }
 
+pub fn len<T>(v: &Option<Vec<T>>) -> usize {
+	v.as_ref().map(|u| u.len()).unwrap_or_default()
+}
+
+// pallet_escrow
+pub trait WeightInfo {
+	fn create(h: u32, s: u32) -> Weight;
+	fn abort(h: u32) -> Weight;
+	fn cancel() -> Weight;
+	fn complete() -> Weight;
+	fn store_results(s: u32) -> Weight;
+	fn bulk_payout(s: u32, b: u32) -> Weight;
+}
+
+impl WeightInfo for () {
+	fn create(_h: u32, _s: u32) -> Weight {
+		0
+	}
+	fn abort(_h: u32) -> Weight {
+		0
+	}
+	fn cancel() -> Weight {
+		0
+	}
+	fn complete() -> Weight {
+		0
+	}
+	fn store_results(_s: u32) -> Weight {
+		0
+	}
+	fn bulk_payout(_s: u32, _b: u32) -> Weight {
+		0
+	}
+}
+
 pub trait Trait: frame_system::Trait + timestamp::Trait {
 	type Event: From<Event<Self>> + Into<<Self as frame_system::Trait>::Event>;
 	type StandardDuration: Get<Self::Moment>;
@@ -75,6 +113,8 @@ pub trait Trait: frame_system::Trait + timestamp::Trait {
 	type Currency: Currency<Self::AccountId>;
 	type BulkBalanceLimit: Get<BalanceOf<Self>>;
 	type BulkAccountsLimit: Get<usize>;
+	type HandlersLimit: Get<usize>;
+	type WeightInfo: WeightInfo;
 }
 
 pub type BalanceOf<T> = <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
@@ -96,8 +136,8 @@ decl_event!(
 	pub enum Event<T> where
 		<T as frame_system::Trait>::AccountId,
 	{
-		/// The escrow is in Pending status \[escrow_id, creator, canceller, manifest_url, manifest_hash\]
-		Pending(EscrowId, AccountId, AccountId, Vec<u8>, Vec<u8>),
+		/// The escrow is in Pending status \[escrow_id, creator, canceller, manifest_url, manifest_hash, escrow_account\]
+		Pending(EscrowId, AccountId, AccountId, Vec<u8>, Vec<u8>, AccountId),
 		IntermediateStorage(EscrowId, Vec<u8>, Vec<u8>),
 		/// Bulk payout was executed. Completion indicated by the boolean
 		BulkPayout(EscrowId, u128),
@@ -123,6 +163,7 @@ decl_error! {
 		/// Transfer is too big for bulk transfer
 		TransferTooBig,
 		StringSize,
+		TooManyHandlers,
 	}
 }
 
@@ -132,7 +173,7 @@ decl_module! {
 
 		fn deposit_event() = default;
 
-		#[weight = 0]
+		#[weight = <T as Trait>::WeightInfo::create(handlers.len() as u32, (manifest_url.len() + manifest_hash.len()) as u32)]
 		pub fn create(origin,
 			canceller: T::AccountId,
 			handlers: Vec<T::AccountId>,
@@ -146,33 +187,37 @@ decl_module! {
 			let who = ensure_signed(origin)?;
 			ensure!(manifest_url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(manifest_hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
-			// This is fine as `100 + 100 < 256` so no chance of overflow.
+			ensure!(handlers.len() <= T::HandlersLimit::get(), Error::<T>::TooManyHandlers);
+			// This is fine as `100 + 100 < 256`, so no chance of overflow.
 			let total_stake = reputation_oracle_stake.deconstruct().saturating_add(recording_oracle_stake.deconstruct());
 			ensure!(total_stake <= 100, Error::<T>::StakeOutOfBounds);
 			let end_time = <timestamp::Module<T>>::get() + T::StandardDuration::get();
+
 			let id = Counter::get();
-			let escrow_address = Self::account_id_for(id);
+			Counter::set(id + 1);
+
+			let mut trusted = vec![&recording_oracle, &reputation_oracle, &canceller, &who];
+			trusted.extend(&handlers);
+			Self::add_trusted_handlers(id, &trusted);
+
+			let account = Self::account_id_for(id);
 			let new_escrow = EscrowInfo {
 				status: EscrowStatus::Pending,
 				end_time,
 				manifest_url: manifest_url.clone(),
 				manifest_hash: manifest_hash.clone(),
-				reputation_oracle: reputation_oracle.clone(),
-				recording_oracle: recording_oracle.clone(),
+				reputation_oracle,
+				recording_oracle,
 				reputation_oracle_stake,
 				recording_oracle_stake,
 				canceller: canceller.clone(),
-				escrow_address,
+				account: account.clone(),
 			};
-			Counter::set(id + 1);
 			<Escrows<T>>::insert(id, new_escrow);
-			let mut trusted = vec![recording_oracle, reputation_oracle, canceller.clone(), who.clone()];
-			trusted.extend(handlers);
-			Self::add_trusted_handlers(id, trusted);
-			Self::deposit_event(RawEvent::Pending(id, who, canceller, manifest_url, manifest_hash));
+			Self::deposit_event(RawEvent::Pending(id, who, canceller, manifest_url, manifest_hash, account));
 		}
 
-		#[weight = 0]
+		#[weight = <T as Trait>::WeightInfo::abort(T::HandlersLimit::get() as u32)]
 		fn abort(origin, id: EscrowId) {
 			let who = ensure_signed(origin)?;
 			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
@@ -181,12 +226,13 @@ decl_module! {
 			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 			let balance = Self::get_balance(&escrow);
 			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
-			T::Currency::transfer(&escrow.escrow_address.clone(), &escrow.canceller.clone(), balance, AllowDeath)?;
+			// TODO: Should this really go to the canceller?
+			T::Currency::transfer(&escrow.account, &escrow.canceller, balance, AllowDeath)?;
 			<Escrows<T>>::remove(id);
 			<TrustedHandlers<T>>::remove_prefix(id);
 		}
 
-		#[weight = 0]
+		#[weight = <T as Trait>::WeightInfo::cancel()]
 		fn cancel(origin, id: EscrowId) {
 			let who = ensure_signed(origin)?;
 			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
@@ -195,12 +241,13 @@ decl_module! {
 			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 			let balance = Self::get_balance(&escrow);
 			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
-			T::Currency::transfer(&escrow.escrow_address.clone(), &escrow.canceller.clone(), balance, AllowDeath)?;
+			// TODO: Should this really go to the canceller?
+			T::Currency::transfer(&escrow.account, &escrow.canceller, balance, AllowDeath)?;
 			escrow.status = EscrowStatus::Cancelled;
 			<Escrows<T>>::insert(id, escrow);
 		}
 
-		#[weight = 0]
+		#[weight = <T as Trait>::WeightInfo::complete()]
 		fn complete(origin, id: EscrowId) {
 			let who = ensure_signed(origin)?;
 			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
@@ -211,9 +258,8 @@ decl_module! {
 			<Escrows<T>>::insert(id, escrow);
 		}
 
-		#[weight = 0]
+		#[weight = <T as Trait>::WeightInfo::store_results((url.len() + hash.len()) as u32)]
 		fn store_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
-			// TODO: We will probably want to limit the result size as well.
 			let who = ensure_signed(origin)?;
 			ensure!(url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
@@ -224,7 +270,7 @@ decl_module! {
 			Self::deposit_event(RawEvent::IntermediateStorage(id, url, hash));
 		}
 
-		#[weight = 0]
+		#[weight = <T as Trait>::WeightInfo::bulk_payout((len(results_url) + len(results_hash)) as u32, recipients.len() as u32)]
 		fn bulk_payout(origin,
 			id: EscrowId,
 			recipients: Vec<T::AccountId>,
@@ -235,8 +281,9 @@ decl_module! {
 		) -> DispatchResult {
 			with_transaction_result(|| -> DispatchResult {
 				let who = ensure_signed(origin)?;
-				ensure!(results_url.as_ref().map(|u| u.len()).unwrap_or_default() <= T::StringLimit::get(), Error::<T>::StringSize);
-				ensure!(results_hash.as_ref().map(|h| h.len()).unwrap_or_default() <= T::StringLimit::get(), Error::<T>::StringSize);
+				ensure!(len(&results_url) <= T::StringLimit::get(), Error::<T>::StringSize);
+				ensure!(len(&results_hash) <= T::StringLimit::get(), Error::<T>::StringSize);
+				// TODO: Extract checks into function?
 				ensure!(Self::is_trusted_handler(id, &who), Error::<T>::NonTrustedAccount);
 				let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 				ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
@@ -261,8 +308,8 @@ decl_module! {
 				}
 				let (reputation_fee, recording_fee, final_amounts) = Self::finalize_payouts(&escrow, &amounts);
 
-				let address = escrow.escrow_address.clone();
-				
+				let address = escrow.account.clone();
+
 				T::Currency::transfer(&address.clone(), &escrow.reputation_oracle.clone(), reputation_fee, AllowDeath)?;
 				T::Currency::transfer(&address.clone(), &escrow.recording_oracle.clone(), recording_fee, AllowDeath)?;
 				Self::do_transfer_bulk(address, recipients, final_amounts)?;
@@ -286,15 +333,15 @@ impl<T: Trait> Module<T> {
 	pub(crate) fn account_id_for(id: EscrowId) -> T::AccountId {
 		MODULE_ID.into_sub_account(id)
 	}
-	
-	pub(crate) fn add_trusted_handlers(id: EscrowId, trusted: Vec<T::AccountId>) {
+
+	pub(crate) fn add_trusted_handlers(id: EscrowId, trusted: &[&T::AccountId]) {
 		for trust in trusted {
-			<TrustedHandlers<T>>::insert(id, trust, true);
+			<TrustedHandlers<T>>::insert(id, *trust, true);
 		}
 	}
 
-	pub(crate) fn get_balance(target_escrow: &EscrowInfo<T::Moment, T::AccountId>) -> BalanceOf<T> {
-		T::Currency::free_balance(&target_escrow.escrow_address)
+	pub(crate) fn get_balance(escrow: &EscrowInfo<T::Moment, T::AccountId>) -> BalanceOf<T> {
+		T::Currency::free_balance(&escrow.account)
 	}
 
 	pub(crate) fn finalize_payouts(
@@ -324,8 +371,7 @@ impl<T: Trait> Module<T> {
 		from: T::AccountId,
 		tos: Vec<T::AccountId>,
 		values: Vec<BalanceOf<T>>,
-	) -> DispatchResult
-	{
+	) -> DispatchResult {
 		ensure!(tos.len() <= T::BulkAccountsLimit::get(), Error::<T>::TooManyTos);
 		ensure!(tos.len() == values.len(), Error::<T>::MismatchBulkTransfer);
 		let mut sum: BalanceOf<T> = 0.into();
