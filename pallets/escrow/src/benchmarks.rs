@@ -4,9 +4,7 @@ use super::*;
 use sp_std::prelude::*;
 
 use crate::Module as Escrow;
-use codec::Encode;
 use frame_benchmarking::{account, benchmarks, whitelisted_caller};
-use frame_support::assert_ok;
 use frame_system::{EventRecord, RawOrigin};
 
 pub type BalanceOf<T> = <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
@@ -62,7 +60,7 @@ benchmarks! {
 		}
 		assert_last_event::<T>(RawEvent::Pending(id, caller, canceller, manifest_url, manifest_hash, Escrow::<T>::account_id_for(id)).into())
 	}
-	
+
 	abort {
 		let h in 1..(T::HandlersLimit::get() as u32);
 
@@ -77,11 +75,12 @@ benchmarks! {
 		let reputation_oracle_stake = Percent::from_percent(10);
 		let recording_oracle_stake = Percent::from_percent(10);
 
-		assert_ok!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), canceller.clone(), handlers.clone(), manifest_url.clone(), manifest_hash.clone(), reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake));
+		assert_eq!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), canceller.clone(), handlers.clone(), manifest_url.clone(), manifest_hash.clone(), reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake), Ok(()));
 		let id = 0;
 		let escrow = Escrows::<T>::get(id).unwrap();
-		let amount = 100;
+		let amount = 1000;
 		T::Currency::make_free_balance_be(&escrow.account, amount.into());
+		assert_eq!(T::Currency::free_balance(&escrow.account), amount.into());
 	} : _(RawOrigin::Signed(caller.clone()), id)
 	verify {
 		assert_eq!(Escrows::<T>::get(id), None);
@@ -106,10 +105,10 @@ benchmarks! {
 		let reputation_oracle_stake = Percent::from_percent(10);
 		let recording_oracle_stake = Percent::from_percent(10);
 
-		assert_ok!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), canceller.clone(), handlers.clone(), manifest_url.clone(), manifest_hash.clone(), reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake));
+		assert_eq!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), canceller.clone(), handlers.clone(), manifest_url.clone(), manifest_hash.clone(), reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake), Ok(()));
 		let id = 0;
 		let escrow = Escrows::<T>::get(id).unwrap();
-		let amount = 100;
+		let amount = 1000;
 		T::Currency::make_free_balance_be(&escrow.account, amount.into());
 	} : _(RawOrigin::Signed(caller.clone()), id)
 	verify {
@@ -131,7 +130,7 @@ benchmarks! {
 		let reputation_oracle_stake = Percent::from_percent(10);
 		let recording_oracle_stake = Percent::from_percent(10);
 
-		assert_ok!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), canceller.clone(), handlers.clone(), manifest_url.clone(), manifest_hash.clone(), reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake));
+		assert_eq!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), canceller.clone(), handlers.clone(), manifest_url.clone(), manifest_hash.clone(), reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake), Ok(()));
 		let id = 0;
 		set_status::<T>(id, EscrowStatus::Paid)?;
 	} : _(RawOrigin::Signed(caller.clone()), id)
@@ -154,7 +153,7 @@ benchmarks! {
 		let reputation_oracle_stake = Percent::from_percent(10);
 		let recording_oracle_stake = Percent::from_percent(10);
 
-		assert_ok!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), canceller.clone(), handlers.clone(), manifest_url.clone(), manifest_hash.clone(), reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake));
+		assert_eq!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), canceller.clone(), handlers.clone(), manifest_url.clone(), manifest_hash.clone(), reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake), Ok(()));
 		let id = 0;
 		let url = vec![junk; s as usize];
 		let hash = vec![junk; s as usize];
@@ -179,13 +178,14 @@ benchmarks! {
 		let reputation_oracle_stake = Percent::from_percent(10);
 		let recording_oracle_stake = Percent::from_percent(10);
 
-		assert_ok!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), canceller.clone(), handlers.clone(), manifest_url.clone(), manifest_hash.clone(), reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake));
+		assert_eq!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), canceller.clone(), handlers.clone(), manifest_url.clone(), manifest_hash.clone(), reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake), Ok(()));
 		let id = 0;
 		let results_url = vec![junk; s as usize];
 		let results_hash = vec![junk; s as usize];
 		let tx_id = 0;
 		let escrow = Escrows::<T>::get(id).unwrap();
-		let amount: BalanceOf<T> = 10.into();
+		// Need a high enough value so we don't run into ExistentialDeposit issues for the oracles.
+		let amount: BalanceOf<T> = 100_000.into();
 		let total_amount = amount * b.into();
 		T::Currency::make_free_balance_be(&escrow.account, total_amount.into());
 		let recipients: Vec<T::AccountId> = (0..b).map(|b| account("recipient", b, SEED)).collect();
@@ -193,8 +193,8 @@ benchmarks! {
 	} : _(RawOrigin::Signed(caller.clone()), id, recipients.clone(), amounts.clone(), Some(results_url.clone()), Some(results_hash.clone()), tx_id)
 	verify {
 		assert_eq!(FinalResults::get(id), Some(ResultInfo { results_url, results_hash }));
-		assert_eq!(T::Currency::free_balance(&reputation_oracle), b.into());
-		assert_eq!(T::Currency::free_balance(&recording_oracle), b.into());
+		assert_eq!(T::Currency::free_balance(&reputation_oracle), reputation_oracle_stake.mul_floor(total_amount));
+		assert_eq!(T::Currency::free_balance(&recording_oracle), recording_oracle_stake.mul_floor(total_amount));
 		let received =  amount - reputation_oracle_stake.mul_floor(amount) - recording_oracle_stake.mul_floor(amount);
 		for r in recipients {
 			assert_eq!(T::Currency::free_balance(&r), received);
