@@ -136,8 +136,8 @@ decl_event!(
 	pub enum Event<T> where
 		<T as frame_system::Trait>::AccountId,
 	{
-		/// The escrow is in Pending status \[escrow_id, creator, canceller, manifest_url, manifest_hash, escrow_account\]
-		Pending(EscrowId, AccountId, AccountId, Vec<u8>, Vec<u8>, AccountId),
+		/// The escrow is in Pending status \[escrow_id, creator, manifest_url, manifest_hash, escrow_account\]
+		Pending(EscrowId, AccountId, Vec<u8>, Vec<u8>, AccountId),
 		IntermediateStorage(EscrowId, Vec<u8>, Vec<u8>),
 		/// Bulk payout was executed. Completion indicated by the boolean
 		BulkPayout(EscrowId, u128),
@@ -173,10 +173,8 @@ decl_module! {
 
 		fn deposit_event() = default;
 
-		#[weight = <T as Trait>::WeightInfo::create(handlers.len() as u32, (manifest_url.len() + manifest_hash.len()) as u32)]
+		#[weight = <T as Trait>::WeightInfo::create(0, (manifest_url.len() + manifest_hash.len()) as u32)]
 		pub fn create(origin,
-			canceller: T::AccountId,
-			handlers: Vec<T::AccountId>,
 			manifest_url: Vec<u8>,
 			manifest_hash: Vec<u8>,
 			reputation_oracle: T::AccountId,
@@ -187,7 +185,6 @@ decl_module! {
 			let who = ensure_signed(origin)?;
 			ensure!(manifest_url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(manifest_hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
-			ensure!(handlers.len() <= T::HandlersLimit::get(), Error::<T>::TooManyHandlers);
 			// This is fine as `100 + 100 < 256`, so no chance of overflow.
 			let total_stake = reputation_oracle_stake.deconstruct().saturating_add(recording_oracle_stake.deconstruct());
 			ensure!(total_stake <= 100, Error::<T>::StakeOutOfBounds);
@@ -196,8 +193,7 @@ decl_module! {
 			let id = Counter::get();
 			Counter::set(id + 1);
 
-			let mut trusted = vec![&recording_oracle, &reputation_oracle, &canceller, &who];
-			trusted.extend(&handlers);
+			let trusted = vec![&recording_oracle, &reputation_oracle, &who];
 			Self::add_trusted_handlers(id, &trusted);
 
 			let account = Self::account_id_for(id);
@@ -210,11 +206,11 @@ decl_module! {
 				recording_oracle,
 				reputation_oracle_stake,
 				recording_oracle_stake,
-				canceller: canceller.clone(),
+				canceller: who.clone(),
 				account: account.clone(),
 			};
 			<Escrows<T>>::insert(id, new_escrow);
-			Self::deposit_event(RawEvent::Pending(id, who, canceller, manifest_url, manifest_hash, account));
+			Self::deposit_event(RawEvent::Pending(id, who, manifest_url, manifest_hash, account));
 		}
 
 		#[weight = <T as Trait>::WeightInfo::abort(T::HandlersLimit::get() as u32)]
