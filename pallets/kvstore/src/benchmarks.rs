@@ -3,7 +3,6 @@
 use super::*;
 use sp_std::prelude::*;
 
-use codec::Encode;
 use frame_system::{RawOrigin, EventRecord};
 use frame_benchmarking::{benchmarks, whitelisted_caller};
 use crate::Module as KVStore;

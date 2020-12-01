@@ -38,10 +38,9 @@ pub use frame_support::{
 	},
 };
 
-/// Import the template pallet.
-pub use pallet_template;
+/// Import the pallets.
+pub use pallet_escrow;
 pub use pallet_kvstore;
-pub use pallet_hmtoken;
 
 mod weights;
 
@@ -70,6 +69,9 @@ pub type Hash = sp_core::H256;
 
 /// Digest item type.
 pub type DigestItem = generic::DigestItem<Hash>;
+
+/// Define type for timestamps.
+pub type Moment = u64;
 
 /// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
 /// the specifics of the runtime. They can then be made to be agnostic over specific formats
@@ -225,7 +227,7 @@ parameter_types! {
 
 impl pallet_timestamp::Trait for Runtime {
 	/// A timestamp: milliseconds since the unix epoch.
-	type Moment = u64;
+	type Moment = Moment;
 	type OnTimestampSet = Aura;
 	type MinimumPeriod = MinimumPeriod;
 	type WeightInfo = ();
@@ -280,12 +282,20 @@ parameter_types! {
 	pub const BulkBalanceLimit: Balance = 1_000_000_000 * 1_000_000_000_000_000;
 }
 
-impl pallet_hmtoken::Trait for Runtime {
+parameter_types! {
+	pub const StandardDuration: Moment = 8_640_000;
+	pub const HandlersLimit: usize = 20;
+}
+
+impl pallet_escrow::Trait for Runtime {
 	type Event = Event;
-	type Balance = Balance;
+	type StandardDuration = StandardDuration;
+	type StringLimit = StringLimit;
+	type Currency = Balances;
 	type BulkAccountsLimit = BulkAccountsLimit;
 	type BulkBalanceLimit = BulkBalanceLimit;
-	type WeightInfo = weights::pallet_hmtoken::WeightInfo;
+	type HandlersLimit = HandlersLimit;
+	type WeightInfo = weights::pallet_escrow::WeightInfo;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -304,7 +314,7 @@ construct_runtime!(
 		TransactionPayment: pallet_transaction_payment::{Module, Storage},
 		Sudo: pallet_sudo::{Module, Call, Config<T>, Storage, Event<T>},
 		KVStore: pallet_kvstore::{Module, Call, Storage, Event<T>},
-		HMToken: pallet_hmtoken::{Module, Call, Storage, Event<T>, Config<T>},
+		Escrow: pallet_escrow::{Module, Call, Storage, Event<T>},
 	}
 );
 
@@ -495,7 +505,7 @@ impl_runtime_apis! {
 			add_benchmark!(params, batches, pallet_balances, Balances);
 			add_benchmark!(params, batches, pallet_timestamp, Timestamp);
 			add_benchmark!(params, batches, pallet_kvstore, KVStore);
-			add_benchmark!(params, batches, pallet_hmtoken, HMToken);
+			add_benchmark!(params, batches, pallet_escrow, Escrow);
 
 			if batches.is_empty() { return Err("Benchmark not found for this pallet.".into()) }
 			Ok(batches)

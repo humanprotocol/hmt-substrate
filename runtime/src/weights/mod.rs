@@ -1,2 +1,2 @@
 pub mod pallet_kvstore;
-pub mod pallet_hmtoken;
+pub mod pallet_escrow;
