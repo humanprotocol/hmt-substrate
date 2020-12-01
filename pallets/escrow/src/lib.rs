@@ -30,8 +30,10 @@ pub type EscrowId = u128;
 
 const MODULE_ID: ModuleId = ModuleId(*b"escrowhp");
 
+/// Configuration and state for an escrow.
 #[derive(Clone, Encode, Decode, Debug, PartialEq, Eq)]
 pub struct EscrowInfo<Moment, AccountId> {
+	/// Current status of the escrow. Is created as `Pending`.
 	status: EscrowStatus,
 	end_time: Moment,
 	manifest_url: Vec<u8>,
@@ -40,10 +42,13 @@ pub struct EscrowInfo<Moment, AccountId> {
 	recording_oracle: AccountId,
 	reputation_oracle_stake: Percent,
 	recording_oracle_stake: Percent,
+	/// The account that will be refunded to on cancel/abort.
 	canceller: AccountId,
+	/// The account id used to hold escrow funds.
 	account: AccountId,
 }
 
+/// Points to where the results for an escrow are stored.
 #[derive(Clone, Encode, Decode, Debug, PartialEq, Eq)]
 pub struct ResultInfo {
 	results_url: Vec<u8>,
@@ -75,10 +80,6 @@ pub fn with_transaction_result<R>(f: impl FnOnce() -> Result<R, DispatchError>) 
 			TransactionOutcome::Rollback(res)
 		}
 	})
-}
-
-pub fn len<T>(v: &Option<Vec<T>>) -> usize {
-	v.as_ref().map(|u| u.len()).unwrap_or_default()
 }
 
 // pallet_escrow
@@ -127,12 +128,16 @@ pub type BalanceOf<T> = <<T as Trait>::Currency as Currency<<T as frame_system::
 
 decl_storage! {
 	trait Store for Module<T: Trait> as Escrow {
+		/// Escrow storage. Stores configuration and state for an escorw.
 		Escrows get(fn escrow): map hasher(twox_64_concat) EscrowId => Option<EscrowInfo<T::Moment, T::AccountId>>;
 
+		/// Used to determine the next escrow id for a new escrow.
 		Counter get(fn counter): EscrowId;
 
+		/// Results storage for each escrow.
 		FinalResults get(fn final_results): map hasher(twox_64_concat) EscrowId => Option<ResultInfo>;
 
+		/// The privileged accounts associated with an escrow.
 		TrustedHandlers get(fn is_trusted_handler):
 			double_map hasher(twox_64_concat) EscrowId, hasher(twox_64_concat) T::AccountId => bool;
 	}
@@ -153,12 +158,19 @@ decl_event!(
 
 decl_error! {
 	pub enum Error for Module<T: Trait> {
+		/// The oracle stake given is invalid by exceeding 100%.
 		StakeOutOfBounds,
+		/// A calculation overflowed.
 		Overflow,
+		/// The escrow specified cannot be found in storage.
 		MissingEscrow,
+		/// The account associated with the origin does not have the privilege for the operation.
 		NonTrustedAccount,
+		/// The escrow has `Complete` status and cannot be altered.
 		AlreadyComplete,
+		/// The escrow has `Paid` status and cannot be altered.
 		AlreadyPaid,
+		/// There are not enough funds to execute transfers.
 		OutOfFunds,
 		EscrowExpired,
 		EscrowNotPaid,
@@ -169,8 +181,8 @@ decl_error! {
 		TooManyTos,
 		/// Transfer is too big for bulk transfer
 		TransferTooBig,
+		/// The strings/byte arrays exceed the allowed size.
 		StringSize,
-		TooManyHandlers,
 	}
 }
 
@@ -205,6 +217,7 @@ decl_module! {
 			let id = Counter::get();
 			Counter::set(id + 1);
 
+			// Both oracles as well as the creator are trusted.
 			let trusted = vec![&recording_oracle, &reputation_oracle, &who];
 			Self::add_trusted_handlers(id, &trusted);
 
