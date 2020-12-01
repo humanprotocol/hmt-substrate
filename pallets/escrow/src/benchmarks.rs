@@ -34,13 +34,10 @@ benchmarks! {
 	_ { }
 
 	create {
-		let m in 1..(T::StringLimit::get() as u32);
-		let n in 1..(T::StringLimit::get() as u32);
-
 		let caller: T::AccountId = whitelisted_caller();
 		let junk = 42;
-		let manifest_url = vec![junk; m as usize];
-		let manifest_hash = vec![junk; n as usize];
+		let manifest_url = vec![junk; T::StringLimit::get()];
+		let manifest_hash = vec![junk; T::StringLimit::get()];
 		let reputation_oracle: T::AccountId = account("oracle", 0, SEED);
 		let recording_oracle: T::AccountId = account("oracle", 1, SEED);
 		let reputation_oracle_stake = Percent::from_percent(10);
@@ -58,16 +55,36 @@ benchmarks! {
 		assert_last_event::<T>(RawEvent::Pending(id, caller, manifest_url, manifest_hash, Escrow::<T>::account_id_for(id)).into())
 	}
 
-	abort {
+	add_trusted_handlers {
 		let h in 1..(T::HandlersLimit::get() as u32);
-		let m in 1..(T::StringLimit::get() as u32);
-		let n in 1..(T::StringLimit::get() as u32);
 
 		let caller: T::AccountId = whitelisted_caller();
 		let handlers: Vec<T::AccountId> = (0..h).map(|h| account("handler", h, SEED)).collect();
 		let junk = 42;
-		let manifest_url = vec![junk; m as usize];
-		let manifest_hash = vec![junk; n as usize];
+		let manifest_url = vec![junk; T::StringLimit::get()];
+		let manifest_hash = vec![junk; T::StringLimit::get()];
+		let reputation_oracle: T::AccountId = account("oracle", 0, SEED);
+		let recording_oracle: T::AccountId = account("oracle", 1, SEED);
+		let reputation_oracle_stake = Percent::from_percent(10);
+		let recording_oracle_stake = Percent::from_percent(10);
+
+		assert_eq!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), manifest_url.clone(), manifest_hash.clone(), reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake), Ok(()));
+		let id = 0;
+	} : _(RawOrigin::Signed(caller.clone()), id, handlers.clone())
+	verify {
+		for handler in handlers {
+			assert!(Escrow::<T>::is_trusted_handler(id, handler));
+		}
+	}
+
+	abort {
+		let h in 1..(T::HandlersLimit::get() as u32);
+
+		let caller: T::AccountId = whitelisted_caller();
+		let handlers: Vec<T::AccountId> = (0..h).map(|h| account("handler", h, SEED)).collect();
+		let junk = 42;
+		let manifest_url = vec![junk; T::StringLimit::get()];
+		let manifest_hash = vec![junk; T::StringLimit::get()];
 		let reputation_oracle: T::AccountId = account("oracle", 0, SEED);
 		let recording_oracle: T::AccountId = account("oracle", 1, SEED);
 		let reputation_oracle_stake = Percent::from_percent(10);
@@ -92,13 +109,10 @@ benchmarks! {
 	}
 
 	cancel {
-		let m in 1..(T::StringLimit::get() as u32);
-		let n in 1..(T::StringLimit::get() as u32);
-
 		let caller: T::AccountId = whitelisted_caller();
 		let junk = 42;
-		let manifest_url = vec![junk; m as usize];
-		let manifest_hash = vec![junk; n as usize];
+		let manifest_url = vec![junk; T::StringLimit::get()];
+		let manifest_hash = vec![junk; T::StringLimit::get()];
 		let reputation_oracle: T::AccountId = account("oracle", 0, SEED);
 		let recording_oracle: T::AccountId = account("oracle", 1, SEED);
 		let reputation_oracle_stake = Percent::from_percent(10);
@@ -117,13 +131,10 @@ benchmarks! {
 	}
 
 	complete {
-		let m in 1..(T::StringLimit::get() as u32);
-		let n in 1..(T::StringLimit::get() as u32);
-
 		let caller: T::AccountId = whitelisted_caller();
 		let junk = 42;
-		let manifest_url = vec![junk; m as usize];
-		let manifest_hash = vec![junk; n as usize];
+		let manifest_url = vec![junk; T::StringLimit::get()];
+		let manifest_hash = vec![junk; T::StringLimit::get()];
 		let reputation_oracle: T::AccountId = account("oracle", 0, SEED);
 		let recording_oracle: T::AccountId = account("oracle", 1, SEED);
 		let reputation_oracle_stake = Percent::from_percent(10);
@@ -138,15 +149,10 @@ benchmarks! {
 	}
 
 	note_intermediate_results {
-		let m in 1..(T::StringLimit::get() as u32);
-		let n in 1..(T::StringLimit::get() as u32);
-		let u in 1..(T::StringLimit::get() as u32);
-		let h in 1..(T::StringLimit::get() as u32);
-
 		let caller: T::AccountId = whitelisted_caller();
 		let junk = 42;
-		let manifest_url = vec![junk; m as usize];
-		let manifest_hash = vec![junk; n as usize];
+		let manifest_url = vec![junk; T::StringLimit::get()];
+		let manifest_hash = vec![junk; T::StringLimit::get()];
 		let reputation_oracle: T::AccountId = account("oracle", 0, SEED);
 		let recording_oracle: T::AccountId = account("oracle", 1, SEED);
 		let reputation_oracle_stake = Percent::from_percent(10);
@@ -154,23 +160,18 @@ benchmarks! {
 
 		assert_eq!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), manifest_url.clone(), manifest_hash.clone(), reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake), Ok(()));
 		let id = 0;
-		let url = vec![junk; u as usize];
-		let hash = vec![junk; h as usize];
+		let url = vec![junk; T::StringLimit::get()];
+		let hash = vec![junk; T::StringLimit::get()];
 	} : _(RawOrigin::Signed(caller.clone()), id, url.clone(), hash.clone())
 	verify {
 		assert_last_event::<T>(RawEvent::IntermediateResults(id, url, hash).into())
 	}
 
 	store_final_results {
-		let m in 1..(T::StringLimit::get() as u32);
-		let n in 1..(T::StringLimit::get() as u32);
-		let u in 1..(T::StringLimit::get() as u32);
-		let h in 1..(T::StringLimit::get() as u32);
-
 		let caller: T::AccountId = whitelisted_caller();
 		let junk = 42;
-		let manifest_url = vec![junk; m as usize];
-		let manifest_hash = vec![junk; n as usize];
+		let manifest_url = vec![junk; T::StringLimit::get()];
+		let manifest_hash = vec![junk; T::StringLimit::get()];
 		let reputation_oracle: T::AccountId = account("oracle", 0, SEED);
 		let recording_oracle: T::AccountId = account("oracle", 1, SEED);
 		let reputation_oracle_stake = Percent::from_percent(10);
@@ -178,22 +179,20 @@ benchmarks! {
 
 		assert_eq!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), manifest_url.clone(), manifest_hash.clone(), reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake), Ok(()));
 		let id = 0;
-		let url = vec![junk; u as usize];
-		let hash = vec![junk; h as usize];
+		let url = vec![junk; T::StringLimit::get()];
+		let hash = vec![junk; T::StringLimit::get()];
 	} : _(RawOrigin::Signed(caller.clone()), id, url.clone(), hash.clone())
 	verify {
 		assert_eq!(FinalResults::get(id), Some(ResultInfo { results_url: url, results_hash: hash}));
 	}
 
 	bulk_payout {
-		let m in 1..(T::StringLimit::get() as u32);
-		let n in 1..(T::StringLimit::get() as u32);
 		let b in 1..(T::BulkAccountsLimit::get() as u32);
 
 		let caller: T::AccountId = whitelisted_caller();
 		let junk = 42;
-		let manifest_url = vec![junk; m as usize];
-		let manifest_hash = vec![junk; n as usize];
+		let manifest_url = vec![junk; T::StringLimit::get()];
+		let manifest_hash = vec![junk; T::StringLimit::get()];
 		let reputation_oracle: T::AccountId = account("oracle", 0, SEED);
 		let recording_oracle: T::AccountId = account("oracle", 1, SEED);
 		let reputation_oracle_stake = Percent::from_percent(10);
@@ -232,6 +231,13 @@ mod tests {
 	fn escrow_create() {
 		new_test_ext().execute_with(|| {
 			assert_ok!(test_benchmark_create::<Test>());
+		});
+	}
+
+	#[test]
+	fn escrow_add_trusted_handlers() {
+		new_test_ext().execute_with(|| {
+			assert_ok!(test_benchmark_add_trusted_handlers::<Test>());
 		});
 	}
 

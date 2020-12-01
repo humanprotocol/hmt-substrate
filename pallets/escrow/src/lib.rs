@@ -84,16 +84,21 @@ pub fn with_transaction_result<R>(f: impl FnOnce() -> Result<R, DispatchError>) 
 
 // pallet_escrow
 pub trait WeightInfo {
-	fn create(h: u32, s: u32) -> Weight;
+	fn create() -> Weight;
+	fn add_trusted_handlers(h: u32) -> Weight;
 	fn abort(h: u32) -> Weight;
 	fn cancel() -> Weight;
 	fn complete() -> Weight;
-	fn store_results(s: u32) -> Weight;
-	fn bulk_payout(s: u32, b: u32) -> Weight;
+	fn note_intermediate_results() -> Weight;
+	fn store_final_results() -> Weight;
+	fn bulk_payout(b: u32) -> Weight;
 }
 
 impl WeightInfo for () {
-	fn create(_h: u32, _s: u32) -> Weight {
+	fn create() -> Weight {
+		0
+	}
+	fn add_trusted_handlers(_h: u32) -> Weight {
 		0
 	}
 	fn abort(_h: u32) -> Weight {
@@ -105,10 +110,13 @@ impl WeightInfo for () {
 	fn complete() -> Weight {
 		0
 	}
-	fn store_results(_s: u32) -> Weight {
+	fn note_intermediate_results() -> Weight {
 		0
 	}
-	fn bulk_payout(_s: u32, _b: u32) -> Weight {
+	fn store_final_results() -> Weight {
+		0
+	}
+	fn bulk_payout(_b: u32) -> Weight {
 		0
 	}
 }
@@ -196,7 +204,7 @@ decl_module! {
 		/// Oracles and sender will be set as trusted handlers.
 		/// Sender is set as canceller of the escrow.
 		/// Emits the escrow id with the `Pending` event.
-		#[weight = <T as Trait>::WeightInfo::create(0, (manifest_url.len() + manifest_hash.len()) as u32)]
+		#[weight = <T as Trait>::WeightInfo::create()]
 		pub fn create(origin,
 			manifest_url: Vec<u8>,
 			manifest_hash: Vec<u8>,
@@ -237,7 +245,7 @@ decl_module! {
 			Self::deposit_event(RawEvent::Pending(id, who, manifest_url, manifest_hash, account));
 		}
 
-		#[weight = handlers.len() as Weight]
+		#[weight = <T as Trait>::WeightInfo::add_trusted_handlers(handlers.len() as u32)]
 		fn add_trusted_handlers(origin, id: EscrowId, handlers: Vec<T::AccountId>) {
 			let _ = Self::ensure_trusted(origin, id)?;
 			Self::do_add_trusted_handlers(id, handlers.iter());
@@ -287,7 +295,7 @@ decl_module! {
 		}
 
 		/// Note intermediate results by emitting the `IntermediateResults` event.
-		#[weight = <T as Trait>::WeightInfo::store_results((url.len() + hash.len()) as u32)]
+		#[weight = <T as Trait>::WeightInfo::note_intermediate_results()]
 		fn note_intermediate_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
 			ensure!(url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
@@ -297,7 +305,7 @@ decl_module! {
 		}
 
 		/// Store the url and hash of the final results in storage.
-		#[weight = <T as Trait>::WeightInfo::store_results((url.len() + hash.len()) as u32)]
+		#[weight = <T as Trait>::WeightInfo::store_final_results()]
 		fn store_final_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
 			ensure!(url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
@@ -309,7 +317,7 @@ decl_module! {
 		/// Pay out `recipients` with `amounts`. Calculates and transfer oracle fees.
 		///
 		/// Sets the escrow to `Complete` if all balance is spent, otherwise to `Partial`.
-		#[weight = <T as Trait>::WeightInfo::bulk_payout(0, recipients.len() as u32)]
+		#[weight = <T as Trait>::WeightInfo::bulk_payout(recipients.len() as u32)]
 		fn bulk_payout(origin,
 			id: EscrowId,
 			recipients: Vec<T::AccountId>,
