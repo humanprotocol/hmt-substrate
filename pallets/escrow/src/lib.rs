@@ -351,20 +351,25 @@ decl_module! {
 }
 
 impl<T: Trait> Module<T> {
+	/// Determine the account id corresponding to an escrow id.
 	pub(crate) fn account_id_for(id: EscrowId) -> T::AccountId {
 		MODULE_ID.into_sub_account(id)
 	}
 
+	/// Add the given accounts as trusted handlers (privileged accounts).
 	pub(crate) fn add_trusted_handlers(id: EscrowId, trusted: &[&T::AccountId]) {
 		for trust in trusted {
 			<TrustedHandlers<T>>::insert(id, *trust, true);
 		}
 	}
 
+	/// Get the balance associated with an escrow.
 	pub(crate) fn get_balance(escrow: &EscrowInfo<T::Moment, T::AccountId>) -> BalanceOf<T> {
 		T::Currency::free_balance(&escrow.account)
 	}
 
+	/// Determine the oracle fees for the given `escrow` and `amounts`.
+	// TODO: Integrity tests that check for lost amounts.
 	pub(crate) fn finalize_payouts(
 		escrow: &EscrowInfo<T::Moment, T::AccountId>,
 		amounts: &[BalanceOf<T>],
@@ -388,6 +393,12 @@ impl<T: Trait> Module<T> {
 		(reputation_fee_total, recording_fee_total, final_amounts)
 	}
 
+	/// Do a bulk transfer from the given account to the recepients.
+	///
+	/// Will abort the bulk transfer at the first failing transfer.
+	///
+	/// **Warning**: Will not revert the successful transfers on failure.
+	/// Use with transactional storage if that is desired.
 	pub(crate) fn do_transfer_bulk(
 		from: &T::AccountId,
 		tos: &[T::AccountId],
