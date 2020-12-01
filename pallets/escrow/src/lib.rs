@@ -50,12 +50,18 @@ pub struct ResultInfo {
 	results_hash: Vec<u8>,
 }
 
+/// Defines the status of an escrow.
 #[derive(Copy, Clone, Debug, Encode, Decode, PartialEq, Eq)]
 pub enum EscrowStatus {
+	/// An escrow is pending when created. Open for results and can be cancelled.
 	Pending,
+	/// The escrow is partially fulfilled, including partial payout.
 	Partial,
+	/// The escrow is completely paid.
 	Paid,
+	/// The escrow is marked as complete and cannot be altered anymore.
 	Complete,
+	/// The escrow is cancelled and refunded.
 	Cancelled,
 }
 
@@ -136,11 +142,12 @@ decl_event!(
 	pub enum Event<T> where
 		<T as frame_system::Trait>::AccountId,
 	{
-		/// The escrow is in Pending status \[escrow_id, creator, manifest_url, manifest_hash, escrow_account\]
+		/// The escrow is in Pending status. \[escrow_id, creator, manifest_url, manifest_hash, escrow_account\]
 		Pending(EscrowId, AccountId, Vec<u8>, Vec<u8>, AccountId),
-		IntermediateStorage(EscrowId, Vec<u8>, Vec<u8>),
-		/// Bulk payout was executed. Completion indicated by the boolean
-		BulkPayout(EscrowId, u128),
+		/// Intermediate results can be found at the given url. \[escrow_id, url, hash\]
+		IntermediateResults(EscrowId, Vec<u8>, Vec<u8>),
+		/// Bulk payout was executed. \[escrow_id\]
+		BulkPayout(EscrowId),
 	}
 );
 
@@ -173,6 +180,11 @@ decl_module! {
 
 		fn deposit_event() = default;
 
+		/// Create a new escrow with the given manifest and oracles.
+		///
+		/// Oracles and sender will be set as trusted handlers.
+		/// Sender is set as canceller of the escrow.
+		/// Emits the escrow id with the `Pending` event.
 		#[weight = <T as Trait>::WeightInfo::create(0, (manifest_url.len() + manifest_hash.len()) as u32)]
 		pub fn create(origin,
 			manifest_url: Vec<u8>,
@@ -213,6 +225,9 @@ decl_module! {
 			Self::deposit_event(RawEvent::Pending(id, who, manifest_url, manifest_hash, account));
 		}
 
+		/// Abort the escrow at `id` and refund any balance to the canceller defined in the escrow.
+		///
+		/// Clears escrow state.
 		#[weight = <T as Trait>::WeightInfo::abort(T::HandlersLimit::get() as u32)]
 		fn abort(origin, id: EscrowId) {
 			let who = ensure_signed(origin)?;
@@ -222,12 +237,13 @@ decl_module! {
 			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 			let balance = Self::get_balance(&escrow);
 			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
-			// TODO: Should this really go to the canceller?
 			T::Currency::transfer(&escrow.account, &escrow.canceller, balance, AllowDeath)?;
+			// TODO: Clear final results as well?
 			<Escrows<T>>::remove(id);
 			<TrustedHandlers<T>>::remove_prefix(id);
 		}
 
+		/// Cancel the escrow at `id` and refund any balance to the canceller defined in the escrow.
 		#[weight = <T as Trait>::WeightInfo::cancel()]
 		fn cancel(origin, id: EscrowId) {
 			let who = ensure_signed(origin)?;
@@ -237,12 +253,13 @@ decl_module! {
 			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 			let balance = Self::get_balance(&escrow);
 			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
-			// TODO: Should this really go to the canceller?
 			T::Currency::transfer(&escrow.account, &escrow.canceller, balance, AllowDeath)?;
 			escrow.status = EscrowStatus::Cancelled;
 			<Escrows<T>>::insert(id, escrow);
 		}
 
+		/// Set the escrow at `id` to be complete.
+		/// Prohibits further editing or payouts of the escrow.
 		#[weight = <T as Trait>::WeightInfo::complete()]
 		fn complete(origin, id: EscrowId) {
 			let who = ensure_signed(origin)?;
@@ -252,10 +269,12 @@ decl_module! {
 			ensure!(escrow.status == EscrowStatus::Paid, Error::<T>::EscrowNotPaid);
 			escrow.status = EscrowStatus::Complete;
 			<Escrows<T>>::insert(id, escrow);
+			// TODO: consider cleaning up state here
 		}
 
+		/// Note intermediate results by emitting the `IntermediateResults` event.
 		#[weight = <T as Trait>::WeightInfo::store_results((url.len() + hash.len()) as u32)]
-		fn store_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
+		fn note_intermediate_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
 			let who = ensure_signed(origin)?;
 			ensure!(url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
@@ -263,30 +282,44 @@ decl_module! {
 			let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 			ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
 			ensure!(escrow.status == EscrowStatus::Pending || escrow.status == EscrowStatus::Partial, Error::<T>::EscrowClosed);
-			Self::deposit_event(RawEvent::IntermediateStorage(id, url, hash));
+			Self::deposit_event(RawEvent::IntermediateResults(id, url, hash));
 		}
 
-		#[weight = <T as Trait>::WeightInfo::bulk_payout((len(results_url) + len(results_hash)) as u32, recipients.len() as u32)]
+		/// Store the url and hash of the final results in storage.
+		#[weight = <T as Trait>::WeightInfo::store_results((url.len() + hash.len()) as u32)]
+		fn store_final_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
+			let who = ensure_signed(origin)?;
+			ensure!(url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
+			ensure!(hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
+			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
+			let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
+			ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
+			ensure!(escrow.status == EscrowStatus::Pending || escrow.status == EscrowStatus::Partial, Error::<T>::EscrowClosed);
+			FinalResults::insert(id, ResultInfo { results_url: url, results_hash: hash});
+		}
+
+		/// Pay out `recipients` with `amounts`. Calculates and transfer oracle fees.
+		///
+		/// Sets the escrow to `Complete` if all balance is spent, otherwise to `Partial`.
+		#[weight = <T as Trait>::WeightInfo::bulk_payout(0, recipients.len() as u32)]
 		fn bulk_payout(origin,
 			id: EscrowId,
 			recipients: Vec<T::AccountId>,
 			amounts: Vec<BalanceOf<T>>,
-			results_url: Option<Vec<u8>>,
-			results_hash: Option<Vec<u8>>,
-			tx_id: u128
 		) -> DispatchResult {
 			with_transaction_result(|| -> DispatchResult {
 				let who = ensure_signed(origin)?;
-				ensure!(len(&results_url) <= T::StringLimit::get(), Error::<T>::StringSize);
-				ensure!(len(&results_hash) <= T::StringLimit::get(), Error::<T>::StringSize);
 				// TODO: Extract checks into function?
 				ensure!(Self::is_trusted_handler(id, &who), Error::<T>::NonTrustedAccount);
 				let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 				ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
 				let balance = Self::get_balance(&escrow);
 				ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
+				// TODO: this in incorrect, escrow should be in Pending or Partial
+				// ensure!(escrow.status == EscrowStatus::Pending || escrow.status == EscrowStatus::Partial, Error::<T>::EscrowClosed);
 				ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 
+				// make sure we have enough funds to pay
 				let mut sum: BalanceOf<T> = 0.into();
 				for a in amounts.iter() {
 					sum = sum.saturating_add(*a);
@@ -294,22 +327,14 @@ decl_module! {
 				if balance < sum {
 					return Err(Error::<T>::OutOfFunds.into());
 				}
-				if results_url.is_some() || results_hash.is_some() {
-					let new_results = ResultInfo {
-						results_url: results_url.unwrap_or_default(),
-						results_hash: results_hash.unwrap_or_default(),
-					};
-					// TODO: Is it fine to override this on every bulk payout?
-					<FinalResults>::insert(id, new_results);
-				}
+				// calculate fees
 				let (reputation_fee, recording_fee, final_amounts) = Self::finalize_payouts(&escrow, &amounts);
+				// transfer oracle fees
+				T::Currency::transfer(&escrow.account, &escrow.reputation_oracle, reputation_fee, AllowDeath)?;
+				T::Currency::transfer(&escrow.account, &escrow.recording_oracle, recording_fee, AllowDeath)?;
+				Self::do_transfer_bulk(&escrow.account, recipients, final_amounts)?;
 
-				let address = escrow.account.clone();
-
-				T::Currency::transfer(&address.clone(), &escrow.reputation_oracle.clone(), reputation_fee, AllowDeath)?;
-				T::Currency::transfer(&address.clone(), &escrow.recording_oracle.clone(), recording_fee, AllowDeath)?;
-				Self::do_transfer_bulk(address, recipients, final_amounts)?;
-
+				// set the escrow state according to payout
 				let balance = Self::get_balance(&escrow);
 				if escrow.status == EscrowStatus::Pending {
 					escrow.status = EscrowStatus::Partial;
@@ -318,7 +343,7 @@ decl_module! {
 					escrow.status = EscrowStatus::Paid;
 				}
 				<Escrows<T>>::insert(id, escrow);
-				Self::deposit_event(RawEvent::BulkPayout(id, tx_id));
+				Self::deposit_event(RawEvent::BulkPayout(id));
 				Ok(())
 			})
 		}
@@ -364,7 +389,7 @@ impl<T: Trait> Module<T> {
 	}
 
 	pub(crate) fn do_transfer_bulk(
-		from: T::AccountId,
+		from: &T::AccountId,
 		tos: Vec<T::AccountId>,
 		values: Vec<BalanceOf<T>>,
 	) -> DispatchResult {
