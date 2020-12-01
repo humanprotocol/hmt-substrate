@@ -218,7 +218,7 @@ decl_module! {
 
 			// Both oracles as well as the creator are trusted.
 			let trusted = vec![&recording_oracle, &reputation_oracle, &who];
-			Self::add_trusted_handlers(id, &trusted);
+			Self::do_add_trusted_handlers(id, trusted.into_iter());
 
 			let account = Self::account_id_for(id);
 			let new_escrow = EscrowInfo {
@@ -235,6 +235,12 @@ decl_module! {
 			};
 			<Escrows<T>>::insert(id, new_escrow);
 			Self::deposit_event(RawEvent::Pending(id, who, manifest_url, manifest_hash, account));
+		}
+
+		#[weight = handlers.len() as Weight]
+		fn add_trusted_handlers(origin, id: EscrowId, handlers: Vec<T::AccountId>) {
+			let _ = Self::ensure_trusted(origin, id)?;
+			Self::do_add_trusted_handlers(id, handlers.iter());
 		}
 
 		/// Abort the escrow at `id` and refund any balance to the canceller defined in the escrow.
@@ -353,12 +359,16 @@ impl<T: Trait> Module<T> {
 	}
 
 	/// Add the given accounts as trusted handlers (privileged accounts).
-	pub(crate) fn add_trusted_handlers(id: EscrowId, trusted: &[&T::AccountId]) {
+	pub(crate) fn do_add_trusted_handlers<'a, I>(id: EscrowId, trusted: I)
+	where
+		I: Iterator<Item = &'a T::AccountId>,
+	{
 		for trust in trusted {
-			<TrustedHandlers<T>>::insert(id, *trust, true);
+			<TrustedHandlers<T>>::insert(id, trust, true);
 		}
 	}
 
+	/// Ensure the origin represents a trusted user account.
 	pub fn ensure_trusted(origin: T::Origin, id: EscrowId) -> Result<T::AccountId, DispatchError> {
 		let who = ensure_signed(origin)?;
 		ensure!(Self::is_trusted_handler(id, &who), Error::<T>::NonTrustedAccount);
@@ -366,14 +376,22 @@ impl<T: Trait> Module<T> {
 	}
 
 	/// Get the balance associated with an escrow.
-	pub(crate) fn get_balance(escrow: &EscrowInfo<T::Moment, T::AccountId>) -> BalanceOf<T> {
+	pub fn get_balance(escrow: &EscrowInfo<T::Moment, T::AccountId>) -> BalanceOf<T> {
 		T::Currency::free_balance(&escrow.account)
 	}
 
+	/// Get the escrow for `id` and check that it is not expired and
+	/// has `Pending` or `Partial` status.
 	pub fn get_open_escrow(id: EscrowId) -> Result<EscrowInfo<T::Moment, T::AccountId>, DispatchError> {
 		let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
-		ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
-		ensure!(matches!(escrow.status, EscrowStatus::Pending | EscrowStatus::Partial), Error::<T>::EscrowClosed);
+		ensure!(
+			escrow.end_time > <timestamp::Module<T>>::get(),
+			Error::<T>::EscrowExpired
+		);
+		ensure!(
+			matches!(escrow.status, EscrowStatus::Pending | EscrowStatus::Partial),
+			Error::<T>::EscrowClosed
+		);
 		Ok(escrow)
 	}
 

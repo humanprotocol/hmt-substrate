@@ -547,3 +547,24 @@ fn bulk_transfer_fails() {
 		);
 	});
 }
+
+#[test]
+fn add_trusted_handlers_positive_test() {
+	new_test_ext().execute_with(|| {
+		let sender = 1;
+		let id = 0;
+		let _ = store_default_escrow(id, sender);
+		let handlers = vec![5, 6, 7];
+		for handler in handlers.iter() {
+			assert!(!Escrow::is_trusted_handler(0, handler));
+		}
+		assert_ok!(Escrow::add_trusted_handlers(
+			Origin::signed(sender),
+			id,
+			handlers.clone()
+		));
+		for handler in handlers.iter() {
+			assert!(Escrow::is_trusted_handler(0, handler));
+		}
+	});
+}
