@@ -332,7 +332,7 @@ decl_module! {
 				// transfer oracle fees
 				T::Currency::transfer(&escrow.account, &escrow.reputation_oracle, reputation_fee, AllowDeath)?;
 				T::Currency::transfer(&escrow.account, &escrow.recording_oracle, recording_fee, AllowDeath)?;
-				Self::do_transfer_bulk(&escrow.account, recipients, final_amounts)?;
+				Self::do_transfer_bulk(&escrow.account, &recipients, &final_amounts)?;
 
 				// set the escrow state according to payout
 				let balance = Self::get_balance(&escrow);
@@ -367,7 +367,7 @@ impl<T: Trait> Module<T> {
 
 	pub(crate) fn finalize_payouts(
 		escrow: &EscrowInfo<T::Moment, T::AccountId>,
-		amounts: &Vec<BalanceOf<T>>,
+		amounts: &[BalanceOf<T>],
 	) -> (BalanceOf<T>, BalanceOf<T>, Vec<BalanceOf<T>>) {
 		let mut reputation_fee_total: BalanceOf<T> = 0.into();
 		let reputation_stake = escrow.reputation_oracle_stake;
@@ -390,8 +390,8 @@ impl<T: Trait> Module<T> {
 
 	pub(crate) fn do_transfer_bulk(
 		from: &T::AccountId,
-		tos: Vec<T::AccountId>,
-		values: Vec<BalanceOf<T>>,
+		tos: &[T::AccountId],
+		values: &[BalanceOf<T>],
 	) -> DispatchResult {
 		ensure!(tos.len() <= T::BulkAccountsLimit::get(), Error::<T>::TooManyTos);
 		ensure!(tos.len() == values.len(), Error::<T>::MismatchBulkTransfer);
@@ -401,7 +401,7 @@ impl<T: Trait> Module<T> {
 		}
 		ensure!(sum <= T::BulkBalanceLimit::get(), Error::<T>::TransferTooBig);
 		for (to, value) in tos.into_iter().zip(values.into_iter()) {
-			T::Currency::transfer(&from, &to, value, AllowDeath)?;
+			T::Currency::transfer(&from, to, *value, AllowDeath)?;
 		}
 		Ok(())
 	}

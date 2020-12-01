@@ -512,8 +512,8 @@ fn bulk_transfer_works() {
 		let second_rec = 3;
 		assert_ok!(Escrow::do_transfer_bulk(
 			&from,
-			vec![first_rec, second_rec],
-			vec![amount, amount],
+			&[first_rec, second_rec],
+			&[amount, amount],
 		));
 		assert_eq!(Balances::free_balance(from), new_balance);
 		assert_eq!(Balances::free_balance(first_rec), amount);
@@ -530,20 +530,20 @@ fn bulk_transfer_fails() {
 		let second_rec = 3;
 		<Test as Trait>::Currency::make_free_balance_be(&from, 1_000_000_000);
 		assert_noop!(
-			Escrow::do_transfer_bulk(&from, vec![first_rec], vec![amount, amount],),
+			Escrow::do_transfer_bulk(&from, &[first_rec], &[amount, amount],),
 			Error::<Test>::MismatchBulkTransfer
 		);
 		assert_noop!(
-			Escrow::do_transfer_bulk(&from, vec![first_rec, second_rec], vec![amount],),
+			Escrow::do_transfer_bulk(&from, &[first_rec, second_rec], &[amount],),
 			Error::<Test>::MismatchBulkTransfer
 		);
 
 		assert_noop!(
-			Escrow::do_transfer_bulk(&from, vec![first_rec; 11], vec![amount; 11],),
+			Escrow::do_transfer_bulk(&from, &[first_rec; 11], &[amount; 11],),
 			Error::<Test>::TooManyTos
 		);
 		assert_noop!(
-			Escrow::do_transfer_bulk(&from, vec![first_rec, second_rec], vec![amount, amount],),
+			Escrow::do_transfer_bulk(&from, &[first_rec, second_rec], &[amount, amount],),
 			Error::<Test>::TransferTooBig
 		);
 	});
