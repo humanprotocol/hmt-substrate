@@ -209,11 +209,10 @@ fn abort_negative_tests() {
 		// Set the trusted handler manually to trigger missing escrow error.
 		TrustedHandlers::<Test>::insert(2, sender, true);
 		assert_noop!(Escrow::abort(Origin::signed(1), 2), Error::<Test>::MissingEscrow);
-		assert_noop!(Escrow::abort(Origin::signed(1), 0), Error::<Test>::OutOfFunds);
 		set_status(0, EscrowStatus::Complete).expect("setting status should work");
-		assert_noop!(Escrow::abort(Origin::signed(1), 0), Error::<Test>::AlreadyComplete);
+		assert_noop!(Escrow::abort(Origin::signed(1), 0), Error::<Test>::EscrowClosed);
 		set_status(0, EscrowStatus::Paid).expect("setting status should work");
-		assert_noop!(Escrow::abort(Origin::signed(1), 0), Error::<Test>::AlreadyPaid);
+		assert_noop!(Escrow::abort(Origin::signed(1), 0), Error::<Test>::EscrowClosed);
 	});
 }
 
@@ -240,9 +239,9 @@ fn cancel_negative_tests() {
 		assert_noop!(Escrow::cancel(Origin::signed(1), 2), Error::<Test>::MissingEscrow);
 		assert_noop!(Escrow::cancel(Origin::signed(1), 0), Error::<Test>::OutOfFunds);
 		set_status(0, EscrowStatus::Complete).expect("setting status should work");
-		assert_noop!(Escrow::cancel(Origin::signed(1), 0), Error::<Test>::AlreadyComplete);
+		assert_noop!(Escrow::cancel(Origin::signed(1), 0), Error::<Test>::EscrowClosed);
 		set_status(0, EscrowStatus::Paid).expect("setting status should work");
-		assert_noop!(Escrow::cancel(Origin::signed(1), 0), Error::<Test>::AlreadyPaid);
+		assert_noop!(Escrow::cancel(Origin::signed(1), 0), Error::<Test>::EscrowClosed);
 	});
 }
 
@@ -492,7 +491,7 @@ fn bulk_payout_negative_tests() {
 		set_status(id, EscrowStatus::Paid).expect("setting status should work");
 		assert_noop!(
 			Escrow::bulk_payout(Origin::signed(1), id, recipients.clone(), amounts.clone(),),
-			Error::<Test>::AlreadyPaid
+			Error::<Test>::EscrowClosed
 		);
 		Timestamp::set_timestamp(1001);
 		assert_noop!(

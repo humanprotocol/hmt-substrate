@@ -166,14 +166,13 @@ decl_error! {
 		MissingEscrow,
 		/// The account associated with the origin does not have the privilege for the operation.
 		NonTrustedAccount,
-		/// The escrow has `Complete` status and cannot be altered.
-		AlreadyComplete,
-		/// The escrow has `Paid` status and cannot be altered.
-		AlreadyPaid,
 		/// There are not enough funds to execute transfers.
 		OutOfFunds,
+		/// The escrow has reached the end of its life.
 		EscrowExpired,
+		/// The escrow does not have `Paid` status.
 		EscrowNotPaid,
+		/// The escrow is either `Paid` or `Complete` and cannot be altered.
 		EscrowClosed,
 		/// Spenders and values length do not match in bulk transfer
 		MismatchBulkTransfer,
@@ -243,14 +242,13 @@ decl_module! {
 		/// Clears escrow state.
 		#[weight = <T as Trait>::WeightInfo::abort(T::HandlersLimit::get() as u32)]
 		fn abort(origin, id: EscrowId) {
-			let who = ensure_signed(origin)?;
-			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
+			let _ = Self::ensure_trusted(origin, id)?;
 			let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
-			ensure!(escrow.status != EscrowStatus::Complete, Error::<T>::AlreadyComplete);
-			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
+			ensure!(!matches!(escrow.status, EscrowStatus::Complete | EscrowStatus::Paid), Error::<T>::EscrowClosed);
 			let balance = Self::get_balance(&escrow);
-			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
-			T::Currency::transfer(&escrow.account, &escrow.canceller, balance, AllowDeath)?;
+			if balance > 0.into() {
+				T::Currency::transfer(&escrow.account, &escrow.canceller, balance, AllowDeath)?;
+			}
 			// TODO: Clear final results as well?
 			<Escrows<T>>::remove(id);
 			<TrustedHandlers<T>>::remove_prefix(id);
@@ -259,11 +257,9 @@ decl_module! {
 		/// Cancel the escrow at `id` and refund any balance to the canceller defined in the escrow.
 		#[weight = <T as Trait>::WeightInfo::cancel()]
 		fn cancel(origin, id: EscrowId) {
-			let who = ensure_signed(origin)?;
-			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
+			let _ = Self::ensure_trusted(origin, id)?;
 			let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
-			ensure!(escrow.status != EscrowStatus::Complete, Error::<T>::AlreadyComplete);
-			ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
+			ensure!(matches!(escrow.status, EscrowStatus::Pending | EscrowStatus::Partial), Error::<T>::EscrowClosed);
 			let balance = Self::get_balance(&escrow);
 			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
 			T::Currency::transfer(&escrow.account, &escrow.canceller, balance, AllowDeath)?;
@@ -275,8 +271,7 @@ decl_module! {
 		/// Prohibits further editing or payouts of the escrow.
 		#[weight = <T as Trait>::WeightInfo::complete()]
 		fn complete(origin, id: EscrowId) {
-			let who = ensure_signed(origin)?;
-			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
+			let _ = Self::ensure_trusted(origin, id)?;
 			let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 			ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
 			ensure!(escrow.status == EscrowStatus::Paid, Error::<T>::EscrowNotPaid);
@@ -288,26 +283,20 @@ decl_module! {
 		/// Note intermediate results by emitting the `IntermediateResults` event.
 		#[weight = <T as Trait>::WeightInfo::store_results((url.len() + hash.len()) as u32)]
 		fn note_intermediate_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
-			let who = ensure_signed(origin)?;
 			ensure!(url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
-			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
-			let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
-			ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
-			ensure!(escrow.status == EscrowStatus::Pending || escrow.status == EscrowStatus::Partial, Error::<T>::EscrowClosed);
+			let _ = Self::ensure_trusted(origin, id)?;
+			let _ = Self::get_open_escrow(id)?;
 			Self::deposit_event(RawEvent::IntermediateResults(id, url, hash));
 		}
 
 		/// Store the url and hash of the final results in storage.
 		#[weight = <T as Trait>::WeightInfo::store_results((url.len() + hash.len()) as u32)]
 		fn store_final_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
-			let who = ensure_signed(origin)?;
 			ensure!(url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
-			ensure!(Self::is_trusted_handler(id, who), Error::<T>::NonTrustedAccount);
-			let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
-			ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
-			ensure!(escrow.status == EscrowStatus::Pending || escrow.status == EscrowStatus::Partial, Error::<T>::EscrowClosed);
+			let _ = Self::ensure_trusted(origin, id)?;
+			let _ = Self::get_open_escrow(id)?;
 			FinalResults::insert(id, ResultInfo { results_url: url, results_hash: hash});
 		}
 
@@ -321,16 +310,10 @@ decl_module! {
 			amounts: Vec<BalanceOf<T>>,
 		) -> DispatchResult {
 			with_transaction_result(|| -> DispatchResult {
-				let who = ensure_signed(origin)?;
-				// TODO: Extract checks into function?
-				ensure!(Self::is_trusted_handler(id, &who), Error::<T>::NonTrustedAccount);
-				let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
-				ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
+				let _ = Self::ensure_trusted(origin, id)?;
+				let mut escrow = Self::get_open_escrow(id)?;
 				let balance = Self::get_balance(&escrow);
 				ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
-				// TODO: this in incorrect, escrow should be in Pending or Partial
-				// ensure!(escrow.status == EscrowStatus::Pending || escrow.status == EscrowStatus::Partial, Error::<T>::EscrowClosed);
-				ensure!(escrow.status != EscrowStatus::Paid, Error::<T>::AlreadyPaid);
 
 				// make sure we have enough funds to pay
 				let mut sum: BalanceOf<T> = 0.into();
@@ -376,9 +359,22 @@ impl<T: Trait> Module<T> {
 		}
 	}
 
+	pub fn ensure_trusted(origin: T::Origin, id: EscrowId) -> Result<T::AccountId, DispatchError> {
+		let who = ensure_signed(origin)?;
+		ensure!(Self::is_trusted_handler(id, &who), Error::<T>::NonTrustedAccount);
+		Ok(who)
+	}
+
 	/// Get the balance associated with an escrow.
 	pub(crate) fn get_balance(escrow: &EscrowInfo<T::Moment, T::AccountId>) -> BalanceOf<T> {
 		T::Currency::free_balance(&escrow.account)
+	}
+
+	pub fn get_open_escrow(id: EscrowId) -> Result<EscrowInfo<T::Moment, T::AccountId>, DispatchError> {
+		let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
+		ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
+		ensure!(matches!(escrow.status, EscrowStatus::Pending | EscrowStatus::Partial), Error::<T>::EscrowClosed);
+		Ok(escrow)
 	}
 
 	/// Determine the oracle fees for the given `escrow` and `amounts`.
