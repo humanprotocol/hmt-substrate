@@ -270,9 +270,9 @@ decl_module! {
 			if balance > 0.into() {
 				T::Currency::transfer(&escrow.account, &escrow.canceller, balance, AllowDeath)?;
 			}
-			// TODO: Clear final results as well?
 			<Escrows<T>>::remove(id);
 			<TrustedHandlers<T>>::remove_prefix(id);
+			FinalResults::remove(id);
 		}
 
 		/// Cancel the escrow at `id` and refund any balance to the canceller defined in the escrow.

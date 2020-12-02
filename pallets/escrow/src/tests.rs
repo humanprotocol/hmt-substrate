@@ -191,6 +191,7 @@ fn abort_positive_tests() {
 		assert!(Escrow::is_trusted_handler(id, sender));
 		assert_ok!(Balances::transfer(Origin::signed(sender), escrow.account, 100));
 		let balance_before = Balances::free_balance(sender);
+		assert_ok!(Escrow::store_final_results(Origin::signed(sender), id, b"some.url".to_vec(), b"0xdev".to_vec()));
 		assert_ok!(Escrow::abort(Origin::signed(sender), id));
 		let balance_after = Balances::free_balance(sender);
 
@@ -198,8 +199,10 @@ fn abort_positive_tests() {
 		assert_eq!(Escrow::escrow(id), None);
 		assert_eq!((balance_after - balance_before), 100);
 		assert!(!Escrow::is_trusted_handler(id, sender));
+		assert_eq!(Escrow::final_results(id), None);
 	});
 }
+
 #[test]
 fn abort_negative_tests() {
 	new_test_ext().execute_with(|| {
