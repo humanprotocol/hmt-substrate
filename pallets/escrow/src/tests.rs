@@ -183,6 +183,42 @@ fn create_negative_tests() {
 }
 
 #[test]
+fn add_trusted_handlers_positive_test() {
+	new_test_ext().execute_with(|| {
+		let sender = 1;
+		let id = 0;
+		let _ = store_default_escrow(id, sender);
+		let handlers = vec![5, 6, 7];
+		for handler in handlers.iter() {
+			assert!(!Escrow::is_trusted_handler(0, handler));
+		}
+		assert_ok!(Escrow::add_trusted_handlers(
+			Origin::signed(sender),
+			id,
+			handlers.clone()
+		));
+		for handler in handlers.iter() {
+			assert!(Escrow::is_trusted_handler(0, handler));
+		}
+	});
+}
+
+#[test]
+fn add_trusted_handlers_negative_test() {
+	new_test_ext().execute_with(|| {
+		let sender = 1;
+		let id = 0;
+		let _ = store_default_escrow(id, sender);
+		let handlers = vec![5, 6, 7];
+		assert_noop!(Escrow::add_trusted_handlers(
+			Origin::signed(8),
+			id,
+			handlers
+		), Error::<Test>::NonTrustedAccount);
+	});
+}
+
+#[test]
 fn abort_positive_tests() {
 	new_test_ext().execute_with(|| {
 		let sender = 1;
@@ -548,26 +584,5 @@ fn bulk_transfer_fails() {
 			Escrow::do_transfer_bulk(&from, &[first_rec, second_rec], &[amount, amount],),
 			Error::<Test>::TransferTooBig
 		);
-	});
-}
-
-#[test]
-fn add_trusted_handlers_positive_test() {
-	new_test_ext().execute_with(|| {
-		let sender = 1;
-		let id = 0;
-		let _ = store_default_escrow(id, sender);
-		let handlers = vec![5, 6, 7];
-		for handler in handlers.iter() {
-			assert!(!Escrow::is_trusted_handler(0, handler));
-		}
-		assert_ok!(Escrow::add_trusted_handlers(
-			Origin::signed(sender),
-			id,
-			handlers.clone()
-		));
-		for handler in handlers.iter() {
-			assert!(Escrow::is_trusted_handler(0, handler));
-		}
 	});
 }
