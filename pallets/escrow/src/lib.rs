@@ -422,7 +422,6 @@ impl<T: Trait> Module<T> {
 	}
 
 	/// Determine the oracle fees for the given `escrow` and `amounts`.
-	// TODO: Integrity tests that check for lost amounts.
 	pub(crate) fn finalize_payouts(
 		escrow: &EscrowInfo<T::Moment, T::AccountId>,
 		amounts: &[BalanceOf<T>],
@@ -434,7 +433,6 @@ impl<T: Trait> Module<T> {
 		let final_amounts = amounts
 			.iter()
 			.map(|amount| {
-				// TODO: unclear whether this math is safe and has the intended semantics.
 				let reputation_fee = reputation_stake.mul_floor(*amount);
 				let recording_fee = recording_stake.mul_floor(*amount);
 				let amount_without_fee = amount.saturating_sub(reputation_fee).saturating_sub(recording_fee);

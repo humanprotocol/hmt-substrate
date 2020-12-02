@@ -210,11 +210,10 @@ fn add_trusted_handlers_negative_test() {
 		let id = 0;
 		let _ = store_default_escrow(id, sender);
 		let handlers = vec![5, 6, 7];
-		assert_noop!(Escrow::add_trusted_handlers(
-			Origin::signed(8),
-			id,
-			handlers
-		), Error::<Test>::NonTrustedAccount);
+		assert_noop!(
+			Escrow::add_trusted_handlers(Origin::signed(8), id, handlers),
+			Error::<Test>::NonTrustedAccount
+		);
 	});
 }
 
@@ -227,7 +226,12 @@ fn abort_positive_tests() {
 		assert!(Escrow::is_trusted_handler(id, sender));
 		assert_ok!(Balances::transfer(Origin::signed(sender), escrow.account, 100));
 		let balance_before = Balances::free_balance(sender);
-		assert_ok!(Escrow::store_final_results(Origin::signed(sender), id, b"some.url".to_vec(), b"0xdev".to_vec()));
+		assert_ok!(Escrow::store_final_results(
+			Origin::signed(sender),
+			id,
+			b"some.url".to_vec(),
+			b"0xdev".to_vec()
+		));
 		assert_ok!(Escrow::abort(Origin::signed(sender), id));
 		let balance_after = Balances::free_balance(sender);
 
@@ -559,13 +563,13 @@ fn finalize_payouts_simple_case() {
 fn finalize_payouts_rounds_down() {
 	let escrow = EscrowBuilder::new()
 		.reputation_stake(Percent::from_percent(3))
-		.recording_stake(Percent::from_percent(3))
+		.recording_stake(Percent::from_percent(1))
 		.build();
 	let amounts = vec![50];
 	let (reputation_fee, recording_fee, final_amounts) = Escrow::finalize_payouts(&escrow, &amounts);
 	assert_eq!(reputation_fee, 1);
-	assert_eq!(recording_fee, 1);
-	assert_eq!(final_amounts, vec![48]);
+	assert_eq!(recording_fee, 0);
+	assert_eq!(final_amounts, vec![49]);
 }
 
 #[test]
@@ -581,6 +585,20 @@ fn finalize_payouts_big_numbers() {
 	assert_eq!(reputation_fee, 3 * big_amount / 4);
 	assert_eq!(recording_fee, 3 * big_amount / 5);
 	assert_eq!(final_amounts, vec![final_payout, final_payout, final_payout]);
+}
+
+#[test]
+fn finalize_payouts_high_fees() {
+	let escrow = EscrowBuilder::new()
+		.reputation_stake(Percent::from_percent(50))
+		.recording_stake(Percent::from_percent(50))
+		.build();
+	let big_amount = 1_000_000_000_000_000;
+	let amounts = vec![big_amount];
+	let (reputation_fee, recording_fee, final_amounts) = Escrow::finalize_payouts(&escrow, &amounts);
+	assert_eq!(reputation_fee, big_amount / 2);
+	assert_eq!(recording_fee, big_amount / 2);
+	assert_eq!(final_amounts, vec![0]);
 }
 
 #[test]
