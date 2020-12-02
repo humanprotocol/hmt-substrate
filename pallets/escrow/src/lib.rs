@@ -245,8 +245,14 @@ decl_module! {
 			Self::deposit_event(RawEvent::Pending(id, who, manifest_url, manifest_hash, account));
 		}
 
+		/// Add the given accounts as trusted for escrow with `id`.
+		///
+		/// Allows these accounts to execute privileged operations.
+		/// Requires trusted handler privileges.
 		#[weight = <T as Trait>::WeightInfo::add_trusted_handlers(handlers.len() as u32)]
 		fn add_trusted_handlers(origin, id: EscrowId, handlers: Vec<T::AccountId>) {
+			// TODO: The security [fix PR](https://github.com/hCaptcha/hmt-escrow/pull/247/files)
+			//       checks against the launcher here. What should we do?
 			let _ = Self::ensure_trusted(origin, id)?;
 			Self::do_add_trusted_handlers(id, handlers.iter());
 		}
@@ -254,6 +260,7 @@ decl_module! {
 		/// Abort the escrow at `id` and refund any balance to the canceller defined in the escrow.
 		///
 		/// Clears escrow state.
+		/// Requires trusted handler privileges.
 		#[weight = <T as Trait>::WeightInfo::abort(T::HandlersLimit::get() as u32)]
 		fn abort(origin, id: EscrowId) {
 			let _ = Self::ensure_trusted(origin, id)?;
@@ -269,6 +276,8 @@ decl_module! {
 		}
 
 		/// Cancel the escrow at `id` and refund any balance to the canceller defined in the escrow.
+		///
+		/// Requires trusted handler privileges.
 		#[weight = <T as Trait>::WeightInfo::cancel()]
 		fn cancel(origin, id: EscrowId) {
 			let _ = Self::ensure_trusted(origin, id)?;
@@ -282,7 +291,10 @@ decl_module! {
 		}
 
 		/// Set the escrow at `id` to be complete.
+		///
 		/// Prohibits further editing or payouts of the escrow.
+		/// Requires trusted handler privileges.
+		// TODO: What is the intended use of `complete`?
 		#[weight = <T as Trait>::WeightInfo::complete()]
 		fn complete(origin, id: EscrowId) {
 			let _ = Self::ensure_trusted(origin, id)?;
@@ -295,6 +307,8 @@ decl_module! {
 		}
 
 		/// Note intermediate results by emitting the `IntermediateResults` event.
+		///
+		/// Requires trusted handler privileges.
 		#[weight = <T as Trait>::WeightInfo::note_intermediate_results()]
 		fn note_intermediate_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
 			ensure!(url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
@@ -305,8 +319,11 @@ decl_module! {
 		}
 
 		/// Store the url and hash of the final results in storage.
+		///
+		/// Requires trusted handler privileges.
 		#[weight = <T as Trait>::WeightInfo::store_final_results()]
 		fn store_final_results(origin, id: EscrowId, url: Vec<u8>, hash: Vec<u8>) {
+			// TODO: determine necessary conditions for this
 			ensure!(url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			let _ = Self::ensure_trusted(origin, id)?;
@@ -317,6 +334,7 @@ decl_module! {
 		/// Pay out `recipients` with `amounts`. Calculates and transfer oracle fees.
 		///
 		/// Sets the escrow to `Complete` if all balance is spent, otherwise to `Partial`.
+		/// Requires trusted handler privileges.
 		#[weight = <T as Trait>::WeightInfo::bulk_payout(recipients.len() as u32)]
 		fn bulk_payout(origin,
 			id: EscrowId,
