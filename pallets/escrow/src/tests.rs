@@ -456,6 +456,7 @@ fn bulk_payout_positive_tests() {
 		let id = 0;
 		let escrow = EscrowBuilder::new()
 			.id(id)
+			.canceller(sender)
 			.reputation_oracle(rep_oracle)
 			.reputation_stake(Percent::from_percent(10))
 			.recording_oracle(rec_oracle)
@@ -492,6 +493,7 @@ fn bulk_payout_negative_tests() {
 		let id = 0;
 		let escrow = EscrowBuilder::new()
 			.id(id)
+			.canceller(sender)
 			.reputation_oracle(rep_oracle)
 			.reputation_stake(Percent::from_percent(10))
 			.recording_oracle(rec_oracle)
@@ -538,6 +540,47 @@ fn bulk_payout_negative_tests() {
 			Error::<Test>::EscrowExpired
 		);
 	})
+}
+
+#[test]
+fn finalize_payouts_simple_case() {
+	let escrow = EscrowBuilder::new()
+		.reputation_stake(Percent::from_percent(10))
+		.recording_stake(Percent::from_percent(10))
+		.build();
+	let amounts = vec![10, 10];
+	let (reputation_fee, recording_fee, final_amounts) = Escrow::finalize_payouts(&escrow, &amounts);
+	assert_eq!(reputation_fee, 2);
+	assert_eq!(recording_fee, 2);
+	assert_eq!(final_amounts, vec![8, 8]);
+}
+
+#[test]
+fn finalize_payouts_rounds_down() {
+	let escrow = EscrowBuilder::new()
+		.reputation_stake(Percent::from_percent(3))
+		.recording_stake(Percent::from_percent(3))
+		.build();
+	let amounts = vec![50];
+	let (reputation_fee, recording_fee, final_amounts) = Escrow::finalize_payouts(&escrow, &amounts);
+	assert_eq!(reputation_fee, 1);
+	assert_eq!(recording_fee, 1);
+	assert_eq!(final_amounts, vec![48]);
+}
+
+#[test]
+fn finalize_payouts_big_numbers() {
+	let escrow = EscrowBuilder::new()
+		.reputation_stake(Percent::from_percent(25))
+		.recording_stake(Percent::from_percent(20))
+		.build();
+	let big_amount = 1_000_000_000_000_000;
+	let amounts = vec![big_amount, big_amount, big_amount];
+	let (reputation_fee, recording_fee, final_amounts) = Escrow::finalize_payouts(&escrow, &amounts);
+	let final_payout = big_amount - big_amount / 4 - big_amount / 5;
+	assert_eq!(reputation_fee, 3 * big_amount / 4);
+	assert_eq!(recording_fee, 3 * big_amount / 5);
+	assert_eq!(final_amounts, vec![final_payout, final_payout, final_payout]);
 }
 
 #[test]
