@@ -7,42 +7,48 @@ use frame_support::weights::{Weight, constants::RocksDbWeight as DbWeight};
 
 pub struct WeightInfo;
 impl pallet_escrow::WeightInfo for WeightInfo {
-	fn create(h: u32, s: u32, ) -> Weight {
-		(96_290_000 as Weight)
-			.saturating_add((3_361_000 as Weight).saturating_mul(h as Weight))
-			.saturating_add((2_000 as Weight).saturating_mul(s as Weight))
+	fn create() -> Weight {
+		(112_165_000 as Weight)
 			.saturating_add(DbWeight::get().reads(2 as Weight))
-			.saturating_add(DbWeight::get().writes(6 as Weight))
+			.saturating_add(DbWeight::get().writes(5 as Weight))
+	}
+	fn add_trusted_handlers(h: u32, ) -> Weight {
+		(16_999_000 as Weight)
+			.saturating_add((4_323_000 as Weight).saturating_mul(h as Weight))
+			.saturating_add(DbWeight::get().reads(1 as Weight))
 			.saturating_add(DbWeight::get().writes((1 as Weight).saturating_mul(h as Weight)))
 	}
 	fn abort(h: u32, ) -> Weight {
-		(152_871_000 as Weight)
-			.saturating_add(DbWeight::get().reads(4 as Weight))
-			.saturating_add(DbWeight::get().writes(7 as Weight))
+		(240_983_000 as Weight)
+			.saturating_add(DbWeight::get().reads(3 as Weight))
+			.saturating_add(DbWeight::get().writes(5 as Weight))
 			.saturating_add(DbWeight::get().writes((1 as Weight).saturating_mul(h as Weight)))
 	}
 	fn cancel() -> Weight {
-		(155_549_000 as Weight)
-			.saturating_add(DbWeight::get().reads(4 as Weight))
-			.saturating_add(DbWeight::get().writes(3 as Weight))
+		(153_356_000 as Weight)
+			.saturating_add(DbWeight::get().reads(3 as Weight))
+			.saturating_add(DbWeight::get().writes(2 as Weight))
 	}
 	fn complete() -> Weight {
-		(49_148_000 as Weight)
+		(48_519_000 as Weight)
 			.saturating_add(DbWeight::get().reads(3 as Weight))
 			.saturating_add(DbWeight::get().writes(1 as Weight))
 	}
-	fn store_results(s: u32, ) -> Weight {
-		(53_721_000 as Weight)
-			.saturating_add((17_000 as Weight).saturating_mul(s as Weight))
+	fn note_intermediate_results() -> Weight {
+		(67_591_000 as Weight)
 			.saturating_add(DbWeight::get().reads(3 as Weight))
 	}
-	fn bulk_payout(s: u32, b: u32, ) -> Weight {
-		(0 as Weight)
-			.saturating_add((854_000 as Weight).saturating_mul(s as Weight))
-			.saturating_add((70_121_000 as Weight).saturating_mul(b as Weight))
+	fn store_final_results() -> Weight {
+		(49_339_000 as Weight)
+			.saturating_add(DbWeight::get().reads(3 as Weight))
+			.saturating_add(DbWeight::get().writes(1 as Weight))
+	}
+	fn bulk_payout(b: u32, ) -> Weight {
+		(448_741_000 as Weight)
+			.saturating_add((79_480_000 as Weight).saturating_mul(b as Weight))
 			.saturating_add(DbWeight::get().reads(6 as Weight))
 			.saturating_add(DbWeight::get().reads((1 as Weight).saturating_mul(b as Weight)))
-			.saturating_add(DbWeight::get().writes(5 as Weight))
+			.saturating_add(DbWeight::get().writes(4 as Weight))
 			.saturating_add(DbWeight::get().writes((1 as Weight).saturating_mul(b as Weight)))
 	}
 }
