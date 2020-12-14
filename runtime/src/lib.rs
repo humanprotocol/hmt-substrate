@@ -284,7 +284,7 @@ parameter_types! {
 
 parameter_types! {
 	pub const StandardDuration: Moment = 8_640_000;
-	pub const HandlersLimit: usize = 20;
+	pub const HandlersLimit: u32 = 20;
 }
 
 impl pallet_escrow::Trait for Runtime {
