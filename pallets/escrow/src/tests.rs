@@ -214,6 +214,13 @@ fn add_trusted_handlers_negative_test() {
 			Escrow::add_trusted_handlers(Origin::signed(8), id, handlers),
 			Error::<Test>::NonTrustedAccount
 		);
+		// `Escrow::create` adds 3 trusted handlers by default (sender, rep_oracle, rec_oracle).
+		let new_handlers_count = (HandlersLimit::get() - 2) as usize;
+		let too_many_handlers = vec![5; new_handlers_count];
+		assert_noop!(
+			Escrow::add_trusted_handlers(Origin::signed(1), id, too_many_handlers),
+			Error::<Test>::TooManyHandlers
+		);
 	});
 }
 
