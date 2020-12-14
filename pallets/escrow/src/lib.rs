@@ -56,6 +56,10 @@ pub struct ResultInfo {
 }
 
 /// Defines the status of an escrow.
+///
+/// Pending --> Partial --> Paid --> Complete
+///    |           |
+///    -->   -->   --> Cancelled
 #[derive(Copy, Clone, Debug, Encode, Decode, PartialEq, Eq)]
 pub enum EscrowStatus {
 	/// An escrow is pending when created. Open for results and can be cancelled.
@@ -70,6 +74,7 @@ pub enum EscrowStatus {
 	Cancelled,
 }
 
+
 // Copied from ORML because the built-in `transactional` attribute doesn't work correctly in FRAME 2.0
 pub fn with_transaction_result<R>(f: impl FnOnce() -> Result<R, DispatchError>) -> Result<R, DispatchError> {
 	with_transaction(|| {
@@ -82,7 +87,7 @@ pub fn with_transaction_result<R>(f: impl FnOnce() -> Result<R, DispatchError>) 
 	})
 }
 
-// pallet_escrow
+/// The weight info trait for `pallet_escrow`.
 pub trait WeightInfo {
 	fn create() -> Weight;
 	fn add_trusted_handlers(h: u32) -> Weight;
@@ -94,6 +99,7 @@ pub trait WeightInfo {
 	fn bulk_payout(b: u32) -> Weight;
 }
 
+// default weights for tests
 impl WeightInfo for () {
 	fn create() -> Weight {
 		0
@@ -123,11 +129,20 @@ impl WeightInfo for () {
 
 pub trait Trait: frame_system::Trait + timestamp::Trait {
 	type Event: From<Event<Self>> + Into<<Self as frame_system::Trait>::Event>;
+	/// The duration for which an escrow stays open.
 	type StandardDuration: Get<Self::Moment>;
+	/// The maximum length for strings/byte arrays passed into functions.
 	type StringLimit: Get<usize>;
+	/// Currency implementation for doing transfers.
 	type Currency: Currency<Self::AccountId>;
+	/// The maximum balance that can be transferred via bulk transfer.
 	type BulkBalanceLimit: Get<BalanceOf<Self>>;
+	/// The maximum number of accounts that can be transferred to via bulk transfer.
 	type BulkAccountsLimit: Get<usize>;
+	/// The maximum amount of trusted handlers per escrow.
+	///
+	/// *Note:* Not enforced, but used for weight estimation. Make sure to not add more trusted
+	/// handlers than this.
 	type HandlersLimit: Get<usize>;
 	type WeightInfo: WeightInfo;
 }
@@ -146,6 +161,7 @@ decl_storage! {
 		FinalResults get(fn final_results): map hasher(twox_64_concat) EscrowId => Option<ResultInfo>;
 
 		/// The privileged accounts associated with an escrow.
+		// TODO: consider changing to `()` to save space
 		TrustedHandlers get(fn is_trusted_handler):
 			double_map hasher(twox_64_concat) EscrowId, hasher(twox_64_concat) T::AccountId => bool;
 	}
@@ -210,6 +226,7 @@ decl_module! {
 			manifest_hash: Vec<u8>,
 			reputation_oracle: T::AccountId,
 			recording_oracle: T::AccountId,
+			// TODO: consider renaming to fee
 			reputation_oracle_stake: Percent,
 			recording_oracle_stake: Percent,
 		) {
@@ -333,7 +350,7 @@ decl_module! {
 
 		/// Pay out `recipients` with `amounts`. Calculates and transfer oracle fees.
 		///
-		/// Sets the escrow to `Complete` if all balance is spent, otherwise to `Partial`.
+		/// Sets the escrow to `Paid` if all balance is spent, otherwise to `Partial`.
 		/// Requires trusted handler privileges.
 		#[weight = <T as Trait>::WeightInfo::bulk_payout(recipients.len() as u32)]
 		fn bulk_payout(origin,
