@@ -87,7 +87,7 @@ parameter_types! {
 	pub const StringLimit: usize = 100;
 	pub const BulkAccountsLimit: usize = 10;
 	pub const BulkBalanceLimit: Balance = 1_000_000_000;
-	pub const HandlersLimit: usize = 100;
+	pub const HandlersLimit: u32 = 10;
 }
 
 impl Trait for Test {

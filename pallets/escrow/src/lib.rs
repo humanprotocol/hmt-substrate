@@ -143,7 +143,7 @@ pub trait Trait: frame_system::Trait + timestamp::Trait {
 	///
 	/// *Note:* Not enforced, but used for weight estimation. Make sure to not add more trusted
 	/// handlers than this.
-	type HandlersLimit: Get<usize>;
+	type HandlersLimit: Get<u32>;
 	type WeightInfo: WeightInfo;
 }
 
@@ -151,11 +151,11 @@ pub type BalanceOf<T> = <<T as Trait>::Currency as Currency<<T as frame_system::
 
 decl_storage! {
 	trait Store for Module<T: Trait> as Escrow {
-		/// Escrow storage. Stores configuration and state for an escorw.
-		Escrows get(fn escrow): map hasher(twox_64_concat) EscrowId => Option<EscrowInfo<T::Moment, T::AccountId>>;
-
 		/// Used to determine the next escrow id for a new escrow.
 		Counter get(fn counter): EscrowId;
+
+		/// Escrow storage. Stores configuration and state for an escorw.
+		Escrows get(fn escrow): map hasher(twox_64_concat) EscrowId => Option<EscrowInfo<T::Moment, T::AccountId>>;
 
 		/// Results storage for each escrow.
 		FinalResults get(fn final_results): map hasher(twox_64_concat) EscrowId => Option<ResultInfo>;
@@ -164,6 +164,10 @@ decl_storage! {
 		// TODO: consider changing to `()` to save space
 		TrustedHandlers get(fn is_trusted_handler):
 			double_map hasher(twox_64_concat) EscrowId, hasher(twox_64_concat) T::AccountId => bool;
+		
+		/// The number of trusted handlers associated with an escrow.
+		HandlersCount get(fn handlers_count):
+			map hasher(twox_64_concat) EscrowId => u32;
 	}
 }
 
@@ -206,6 +210,8 @@ decl_error! {
 		TransferTooBig,
 		/// The strings/byte arrays exceed the allowed size.
 		StringSize,
+		/// Tried to add too many trusted handlers to an escorw.
+		TooManyHandlers,
 	}
 }
 
@@ -243,6 +249,7 @@ decl_module! {
 
 			// Both oracles as well as the creator are trusted.
 			let trusted = vec![&recording_oracle, &reputation_oracle, &who];
+			HandlersCount::insert(id, trusted.len() as u32);
 			Self::do_add_trusted_handlers(id, trusted.into_iter());
 
 			let account = Self::account_id_for(id);
@@ -271,7 +278,11 @@ decl_module! {
 			// TODO: The security [fix PR](https://github.com/hCaptcha/hmt-escrow/pull/247/files)
 			//       checks against the launcher here. What should we do?
 			let _ = Self::ensure_trusted(origin, id)?;
+			let count = Self::handlers_count(id);
+			let new_count = (count).saturating_add(handlers.len() as u32);
+			ensure!(new_count <= T::HandlersLimit::get(), Error::<T>::TooManyHandlers);
 			Self::do_add_trusted_handlers(id, handlers.iter());
+			HandlersCount::insert(id, new_count);
 		}
 
 		/// Abort the escrow at `id` and refund any balance to the canceller defined in the escrow.
@@ -288,8 +299,9 @@ decl_module! {
 				T::Currency::transfer(&escrow.account, &escrow.canceller, balance, AllowDeath)?;
 			}
 			<Escrows<T>>::remove(id);
-			<TrustedHandlers<T>>::remove_prefix(id);
 			FinalResults::remove(id);
+			<TrustedHandlers<T>>::remove_prefix(id);
+			HandlersCount::remove(id);
 		}
 
 		/// Cancel the escrow at `id` and refund any balance to the canceller defined in the escrow.

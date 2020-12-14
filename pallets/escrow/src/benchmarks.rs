@@ -56,7 +56,8 @@ benchmarks! {
 	}
 
 	add_trusted_handlers {
-		let h in 1..(T::HandlersLimit::get() as u32);
+		// By default `create` sets 3 trusted handlers (sender, rep_oracle, rec_oracle)
+		let h in 1..((T::HandlersLimit::get() - 3) as u32);
 
 		let caller: T::AccountId = whitelisted_caller();
 		let handlers: Vec<T::AccountId> = (0..h).map(|h| account("handler", h, SEED)).collect();
@@ -78,7 +79,8 @@ benchmarks! {
 	}
 
 	abort {
-		let h in 1..(T::HandlersLimit::get() as u32);
+		// By default `create` sets 3 trusted handlers (sender, rep_oracle, rec_oracle)
+		let h in 1..((T::HandlersLimit::get() - 3) as u32);
 
 		let caller: T::AccountId = whitelisted_caller();
 		let handlers: Vec<T::AccountId> = (0..h).map(|h| account("handler", h, SEED)).collect();
