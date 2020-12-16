@@ -64,9 +64,11 @@ pub struct ResultInfo {
 ///
 /// Valid state transitions:
 ///
+///    | [create]
+///    v
 /// Pending --> Partial --> Paid --> Complete
 ///    |           |
-///    -- -- -- -- --> Cancelled
+///    +-----------+----> Cancelled
 #[derive(Copy, Clone, Debug, Encode, Decode, PartialEq, Eq)]
 pub enum EscrowStatus {
 	/// An escrow is pending when created. Open for results and can be cancelled.
