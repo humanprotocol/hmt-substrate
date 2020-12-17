@@ -26,6 +26,7 @@ mod benchmarks;
 
 use pallet_timestamp as timestamp;
 
+/// Id used for storing all information related to an escrow.
 pub type EscrowId = u128;
 
 const MODULE_ID: ModuleId = ModuleId(*b"escrowhp");
@@ -35,12 +36,16 @@ const MODULE_ID: ModuleId = ModuleId(*b"escrowhp");
 pub struct EscrowInfo<Moment, AccountId> {
 	/// Current status of the escrow. Is created as `Pending`.
 	status: EscrowStatus,
+	/// The expiry time of the escrow.
 	end_time: Moment,
+	/// Location of the manifest specifying metadata for this escrow.
 	manifest_url: Vec<u8>,
 	manifest_hash: Vec<u8>,
 	reputation_oracle: AccountId,
 	recording_oracle: AccountId,
+	/// The amount payed to the reputation oracle at bulk payout.
 	reputation_oracle_stake: Percent,
+	/// The amount payed to the recording oracle at bulk payout.
 	recording_oracle_stake: Percent,
 	/// The account that will be refunded to on cancel/abort.
 	canceller: AccountId,
@@ -57,9 +62,13 @@ pub struct ResultInfo {
 
 /// Defines the status of an escrow.
 ///
+/// Valid state transitions:
+///
+///    | [create]
+///    v
 /// Pending --> Partial --> Paid --> Complete
 ///    |           |
-///    -->   -->   --> Cancelled
+///    +-----------+----> Cancelled
 #[derive(Copy, Clone, Debug, Encode, Decode, PartialEq, Eq)]
 pub enum EscrowStatus {
 	/// An escrow is pending when created. Open for results and can be cancelled.
@@ -76,7 +85,7 @@ pub enum EscrowStatus {
 
 
 // Copied from ORML because the built-in `transactional` attribute doesn't work correctly in FRAME 2.0
-pub fn with_transaction_result<R>(f: impl FnOnce() -> Result<R, DispatchError>) -> Result<R, DispatchError> {
+fn with_transaction_result<R>(f: impl FnOnce() -> Result<R, DispatchError>) -> Result<R, DispatchError> {
 	with_transaction(|| {
 		let res = f();
 		if res.is_ok() {
@@ -161,13 +170,12 @@ decl_storage! {
 		FinalResults get(fn final_results): map hasher(twox_64_concat) EscrowId => Option<ResultInfo>;
 
 		/// The privileged accounts associated with an escrow.
-		// TODO: consider changing to `()` to save space
+		// TODO: consider changing value type to `()` to save space
 		TrustedHandlers get(fn is_trusted_handler):
 			double_map hasher(twox_64_concat) EscrowId, hasher(twox_64_concat) T::AccountId => bool;
 		
 		/// The number of trusted handlers associated with an escrow.
-		HandlersCount get(fn handlers_count):
-			map hasher(twox_64_concat) EscrowId => u32;
+		HandlersCount get(fn handlers_count): map hasher(twox_64_concat) EscrowId => u32;
 	}
 }
 
@@ -210,7 +218,7 @@ decl_error! {
 		TransferTooBig,
 		/// The strings/byte arrays exceed the allowed size.
 		StringSize,
-		/// Tried to add too many trusted handlers to an escorw.
+		/// Tried to add too many trusted handlers to an escrow.
 		TooManyHandlers,
 	}
 }
@@ -240,7 +248,8 @@ decl_module! {
 			ensure!(manifest_url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			ensure!(manifest_hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
 			// This is fine as `100 + 100 < 256`, so no chance of overflow.
-			let total_stake = reputation_oracle_stake.deconstruct().saturating_add(recording_oracle_stake.deconstruct());
+			let total_stake = reputation_oracle_stake.deconstruct()
+				.saturating_add(recording_oracle_stake.deconstruct());
 			ensure!(total_stake <= 100, Error::<T>::StakeOutOfBounds);
 			let end_time = <timestamp::Module<T>>::get() + T::StandardDuration::get();
 
