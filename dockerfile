@@ -1,5 +1,5 @@
 FROM paritytech/ci-linux:974ba3ac-20201006 as builder
-LABEL description="This is the build stage for Polkadot. Here we create the binary."
+LABEL description="This is the build stage for Hmt. Here we create the binary."
 
 ARG PROFILE=release
 WORKDIR /hmt
@@ -11,7 +11,7 @@ RUN cargo build --$PROFILE
 # ===== SECOND STAGE ======
 
 FROM debian:buster-slim
-LABEL description="This is the 2nd stage: a very small image where we copy the Polkadot binary."
+LABEL description="This is the 2nd stage: a very small image where we copy the Hmt binary."
 ARG PROFILE=release
 COPY --from=builder /hmt/target/$PROFILE/node-template /usr/local/bin
 
