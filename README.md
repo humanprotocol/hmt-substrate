@@ -149,3 +149,15 @@ Then run the following command to start a single node development chain.
 ```
 docker-compose up
 ```
+
+To rebuild the image
+
+```
+ docker build -t oodlesofmoodles/hmt .
+ ```
+
+ To push the image 
+
+ ```
+ docker push oodlesofmoodles/hmt
+```
