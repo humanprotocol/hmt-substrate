@@ -11,7 +11,7 @@ use frame_support::{
 };
 use frame_system::ensure_signed;
 use sp_runtime::{
-	traits::{AccountIdConversion, Saturating},
+	traits::{AccountIdConversion, Saturating, Zero},
 	ModuleId, Percent,
 };
 use sp_std::prelude::*;
@@ -304,7 +304,7 @@ decl_module! {
 			let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 			ensure!(!matches!(escrow.status, EscrowStatus::Complete | EscrowStatus::Paid), Error::<T>::EscrowClosed);
 			let balance = Self::get_balance(&escrow);
-			if balance > 0.into() {
+			if balance > Zero::zero() {
 				T::Currency::transfer(&escrow.account, &escrow.canceller, balance, AllowDeath)?;
 			}
 			<Escrows<T>>::remove(id);
@@ -322,7 +322,7 @@ decl_module! {
 			let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
 			ensure!(matches!(escrow.status, EscrowStatus::Pending | EscrowStatus::Partial), Error::<T>::EscrowClosed);
 			let balance = Self::get_balance(&escrow);
-			ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
+			ensure!(balance > Zero::zero(), Error::<T>::OutOfFunds);
 			T::Currency::transfer(&escrow.account, &escrow.canceller, balance, AllowDeath)?;
 			escrow.status = EscrowStatus::Cancelled;
 			<Escrows<T>>::insert(id, escrow);
@@ -383,10 +383,10 @@ decl_module! {
 				let _ = Self::ensure_trusted(origin, id)?;
 				let mut escrow = Self::get_open_escrow(id)?;
 				let balance = Self::get_balance(&escrow);
-				ensure!(balance > 0.into(), Error::<T>::OutOfFunds);
+				ensure!(balance > Zero::zero(), Error::<T>::OutOfFunds);
 
 				// make sure we have enough funds to pay
-				let mut sum: BalanceOf<T> = 0.into();
+				let mut sum: BalanceOf<T> = Zero::zero();
 				for a in amounts.iter() {
 					sum = sum.saturating_add(*a);
 				}
@@ -405,7 +405,7 @@ decl_module! {
 				if escrow.status == EscrowStatus::Pending {
 					escrow.status = EscrowStatus::Partial;
 				}
-				if balance == 0.into() && escrow.status == EscrowStatus::Partial {
+				if balance == Zero::zero() && escrow.status == EscrowStatus::Partial {
 					escrow.status = EscrowStatus::Paid;
 				}
 				<Escrows<T>>::insert(id, escrow);
@@ -464,9 +464,9 @@ impl<T: Trait> Module<T> {
 		escrow: &EscrowInfo<T::Moment, T::AccountId>,
 		amounts: &[BalanceOf<T>],
 	) -> (BalanceOf<T>, BalanceOf<T>, Vec<BalanceOf<T>>) {
-		let mut reputation_fee_total: BalanceOf<T> = 0.into();
+		let mut reputation_fee_total: BalanceOf<T> = Zero::zero();
 		let reputation_stake = escrow.reputation_oracle_stake;
-		let mut recording_fee_total: BalanceOf<T> = 0.into();
+		let mut recording_fee_total: BalanceOf<T> = Zero::zero();
 		let recording_stake = escrow.recording_oracle_stake;
 		let final_amounts = amounts
 			.iter()
@@ -495,7 +495,7 @@ impl<T: Trait> Module<T> {
 	) -> DispatchResult {
 		ensure!(tos.len() <= T::BulkAccountsLimit::get(), Error::<T>::TooManyTos);
 		ensure!(tos.len() == values.len(), Error::<T>::MismatchBulkTransfer);
-		let mut sum: BalanceOf<T> = 0.into();
+		let mut sum: BalanceOf<T> = Zero::zero();
 		for v in values.iter() {
 			sum = sum.saturating_add(*v);
 		}

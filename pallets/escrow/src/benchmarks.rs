@@ -96,7 +96,7 @@ benchmarks! {
 		let id = 0;
 		assert_eq!(Escrow::<T>::add_trusted_handlers(RawOrigin::Signed(caller.clone()).into(), id, handlers.clone()), Ok(()));
 		let escrow = Escrows::<T>::get(id).unwrap();
-		let amount = 1000;
+		let amount = 1000u32;
 		T::Currency::make_free_balance_be(&escrow.account, amount.into());
 		assert_eq!(T::Currency::free_balance(&escrow.account), amount.into());
 	} : _(RawOrigin::Signed(caller.clone()), id)
@@ -106,7 +106,7 @@ benchmarks! {
 		for handler in all_handlers {
 			assert!(!Escrow::<T>::is_trusted_handler(id, handler));
 		}
-		assert_eq!(T::Currency::free_balance(&escrow.account), 0.into());
+		assert_eq!(T::Currency::free_balance(&escrow.account), Zero::zero());
 		assert_eq!(T::Currency::free_balance(&caller), amount.into());
 	}
 
@@ -123,12 +123,12 @@ benchmarks! {
 		assert_eq!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), manifest_url.clone(), manifest_hash.clone(), reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake), Ok(()));
 		let id = 0;
 		let escrow = Escrows::<T>::get(id).unwrap();
-		let amount = 1000;
+		let amount = 1000u32;
 		T::Currency::make_free_balance_be(&escrow.account, amount.into());
 	} : _(RawOrigin::Signed(caller.clone()), id)
 	verify {
 		assert_eq!(Escrows::<T>::get(id).unwrap().status, EscrowStatus::Cancelled);
-		assert_eq!(T::Currency::free_balance(&escrow.account), 0.into());
+		assert_eq!(T::Currency::free_balance(&escrow.account), Zero::zero());
 		assert_eq!(T::Currency::free_balance(&caller), amount.into());
 	}
 
@@ -204,7 +204,7 @@ benchmarks! {
 		let id = 0;
 		let escrow = Escrows::<T>::get(id).unwrap();
 		// Need a high enough value so we don't run into ExistentialDeposit issues for the oracles.
-		let amount: BalanceOf<T> = 100_000.into();
+		let amount: BalanceOf<T> = 100_000u32.into();
 		let total_amount = amount * b.into();
 		T::Currency::make_free_balance_be(&escrow.account, total_amount.into());
 		let recipients: Vec<T::AccountId> = (0..b).map(|b| account("recipient", b, SEED)).collect();
