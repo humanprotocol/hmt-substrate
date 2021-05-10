@@ -166,6 +166,10 @@ decl_storage! {
 		/// Escrow storage. Stores configuration and state for an escorw.
 		Escrows get(fn escrow): map hasher(twox_64_concat) EscrowId => Option<EscrowInfo<T::Moment, T::AccountId>>;
 
+		/// List of all currently active jobs.
+		// For supporting factory API query.
+		EscrowList get(fn escrow_list): Vec<EscrowId>;
+
 		/// Results storage for each escrow.
 		FinalResults get(fn final_results): map hasher(twox_64_concat) EscrowId => Option<ResultInfo>;
 
@@ -275,6 +279,11 @@ decl_module! {
 				account: account.clone(),
 			};
 			<Escrows<T>>::insert(id, new_escrow);
+
+			let mut escrows = <EscrowList>::get();
+			escrows.push(id);
+			<EscrowList>::put(&escrows);
+
 			Self::deposit_event(RawEvent::Pending(id, who, manifest_url, manifest_hash, account));
 		}
 
@@ -300,8 +309,8 @@ decl_module! {
 		/// Requires trusted handler privileges.
 		#[weight = <T as Trait>::WeightInfo::abort(T::HandlersLimit::get() as u32)]
 		fn abort(origin, id: EscrowId) {
-			let _ = Self::ensure_trusted(origin, id)?;
 			let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
+			let _ = Self::ensure_trusted(origin, id)?;
 			ensure!(!matches!(escrow.status, EscrowStatus::Complete | EscrowStatus::Paid), Error::<T>::EscrowClosed);
 			let balance = Self::get_balance(&escrow);
 			if balance > Zero::zero() {
@@ -311,6 +320,11 @@ decl_module! {
 			FinalResults::remove(id);
 			<TrustedHandlers<T>>::remove_prefix(id);
 			HandlersCount::remove(id);
+
+			let mut escrows = <EscrowList>::get();
+			let index = escrows.binary_search(&id).ok().ok_or(Error::<T>::MissingEscrow)?;
+			escrows.remove(index);
+			<EscrowList>::put(&escrows);
 		}
 
 		/// Cancel the escrow at `id` and refund any balance to the canceller defined in the escrow.
@@ -318,8 +332,8 @@ decl_module! {
 		/// Requires trusted handler privileges.
 		#[weight = <T as Trait>::WeightInfo::cancel()]
 		fn cancel(origin, id: EscrowId) {
-			let _ = Self::ensure_trusted(origin, id)?;
 			let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
+			let _ = Self::ensure_trusted(origin, id)?;
 			ensure!(matches!(escrow.status, EscrowStatus::Pending | EscrowStatus::Partial), Error::<T>::EscrowClosed);
 			let balance = Self::get_balance(&escrow);
 			ensure!(balance > Zero::zero(), Error::<T>::OutOfFunds);
@@ -335,8 +349,8 @@ decl_module! {
 		// TODO: What is the intended use of `complete`?
 		#[weight = <T as Trait>::WeightInfo::complete()]
 		fn complete(origin, id: EscrowId) {
-			let _ = Self::ensure_trusted(origin, id)?;
 			let mut escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
+			let _ = Self::ensure_trusted(origin, id)?;
 			ensure!(escrow.end_time > <timestamp::Module<T>>::get(), Error::<T>::EscrowExpired);
 			ensure!(escrow.status == EscrowStatus::Paid, Error::<T>::EscrowNotPaid);
 			escrow.status = EscrowStatus::Complete;
@@ -380,8 +394,8 @@ decl_module! {
 			amounts: Vec<BalanceOf<T>>,
 		) -> DispatchResult {
 			with_transaction_result(|| -> DispatchResult {
-				let _ = Self::ensure_trusted(origin, id)?;
 				let mut escrow = Self::get_open_escrow(id)?;
+				let _ = Self::ensure_trusted(origin, id)?;
 				let balance = Self::get_balance(&escrow);
 				ensure!(balance > Zero::zero(), Error::<T>::OutOfFunds);
 
