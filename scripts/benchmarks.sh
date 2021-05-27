@@ -10,7 +10,7 @@ pallets=(
 )
 
 # build the binary with runtime benchmarks included
-# cargo build --manifest-path node/Cargo.toml --release --features=runtime-benchmarks
+cargo build --manifest-path node/Cargo.toml --release --features=runtime-benchmarks
 
 # run the benchmarks for all the pallets
 for p in ${pallets[@]}
