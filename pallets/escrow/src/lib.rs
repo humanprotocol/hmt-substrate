@@ -107,10 +107,10 @@ fn with_transaction_result<R>(
 
 /// The weight info trait for `pallet_escrow`.
 pub trait WeightInfo {
-    // fn create_factory() -> Weight;
+    fn create_factory() -> Weight;
     fn create() -> Weight;
     fn add_trusted_handlers(h: u32) -> Weight;
-    fn abort(h: u32) -> Weight;
+    fn abort(h: u32, f: u32) -> Weight;
     fn cancel() -> Weight;
     fn complete() -> Weight;
     fn note_intermediate_results() -> Weight;
@@ -120,16 +120,16 @@ pub trait WeightInfo {
 
 // default weights for tests
 impl WeightInfo for () {
-    // fn create_factory() -> Weight {
-    //     0
-    // }
+    fn create_factory() -> Weight {
+        0
+    }
     fn create() -> Weight {
         0
     }
     fn add_trusted_handlers(_h: u32) -> Weight {
         0
     }
-    fn abort(_h: u32) -> Weight {
+    fn abort(_h: u32, _f: u32) -> Weight {
         0
     }
     fn cancel() -> Weight {
@@ -256,9 +256,8 @@ decl_module! {
 
         fn deposit_event() = default;
 		
-		/// Create a new factyory.
-        // #[weight = <T as Trait>::WeightInfo::create_factory()]
-        #[weight = 10_000]
+		/// Create a new factory.
+        #[weight = <T as Trait>::WeightInfo::create_factory()]
         pub fn create_factory(origin) {
             let who = ensure_signed(origin)?;
 
@@ -347,7 +346,7 @@ decl_module! {
         ///
         /// Clears escrow state.
         /// Requires trusted handler privileges.
-        #[weight = <T as Trait>::WeightInfo::abort(T::HandlersLimit::get() as u32)]
+        #[weight = <T as Trait>::WeightInfo::abort(T::HandlersLimit::get() as u32, 19u32)]
         fn abort(origin, id: EscrowId) {
             let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
             let _ = Self::ensure_trusted(origin, id)?;

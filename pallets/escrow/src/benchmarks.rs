@@ -95,10 +95,10 @@ benchmarks! {
 	abort {
 		// By default `create` sets 3 trusted handlers (sender, rep_oracle, rec_oracle)
 		let h in 1..((T::HandlersLimit::get() - 3) as u32);
-
+		let f in 1..19u32;
 		let caller: T::AccountId = whitelisted_caller();
 		<Escrow<T>>::create_factory(RawOrigin::Signed(caller.clone()).into()).unwrap();
-
+		
 		let handlers: Vec<T::AccountId> = (0..h).map(|h| account("handler", h, SEED)).collect();
 		let junk = 42;
 		let manifest_url = vec![junk; T::StringLimit::get()];
@@ -108,7 +108,10 @@ benchmarks! {
 		let reputation_oracle_stake = Percent::from_percent(10);
 		let recording_oracle_stake = Percent::from_percent(10);
 		let factory_id = 0;
-
+		
+		for x in 0..f {
+			Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), manifest_url.clone(), manifest_hash.clone(), factory_id, reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake);
+		}
 		assert_eq!(Escrow::<T>::create(RawOrigin::Signed(caller.clone()).into(), manifest_url.clone(), manifest_hash.clone(), factory_id, reputation_oracle.clone(), recording_oracle.clone(), reputation_oracle_stake, recording_oracle_stake), Ok(()));
 		let id = 0;
 		assert_eq!(Escrow::<T>::add_trusted_handlers(RawOrigin::Signed(caller.clone()).into(), id, handlers.clone()), Ok(()));

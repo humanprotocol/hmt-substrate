@@ -1,6 +1,6 @@
 #!/bin/bash
 
-steps=1
+steps=2
 repeat=1
 output=./runtime/src/weights/
 chain=dev
