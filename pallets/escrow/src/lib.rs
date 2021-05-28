@@ -57,8 +57,8 @@ pub struct EscrowInfo<Moment, AccountId> {
     canceller: AccountId,
     /// The account id used to hold escrow funds.
     account: AccountId,
-	/// The factory with which the escrow is associated.
-	factory: FactoryId
+    /// The factory with which the escrow is associated.
+    factory: FactoryId
 }
 
 /// Points to where the results for an escrow are stored.
@@ -245,8 +245,8 @@ decl_error! {
         TooManyHandlers,
         /// Maximum escrows per factory limit reached.
         FactoryOutOfBounds,
-		/// Factory does not exist with this Id.
-		FactoryDoesNotExist
+        /// Factory does not exist with this Id.
+        FactoryDoesNotExist
     }
 }
 
@@ -255,8 +255,8 @@ decl_module! {
         type Error = Error<T>;
 
         fn deposit_event() = default;
-		
-		/// Create a new factory.
+
+        /// Create a new factory.
         #[weight = <T as Trait>::WeightInfo::create_factory()]
         pub fn create_factory(origin) {
             let who = ensure_signed(origin)?;
@@ -277,7 +277,7 @@ decl_module! {
         pub fn create(origin,
             manifest_url: Vec<u8>,
             manifest_hash: Vec<u8>,
-			factory_id: u128,
+            factory_id: u128,
             reputation_oracle: T::AccountId,
             recording_oracle: T::AccountId,
             // TODO: consider renaming to fee
@@ -287,10 +287,10 @@ decl_module! {
             let who = ensure_signed(origin)?;
             ensure!(manifest_url.len() <= T::StringLimit::get(), Error::<T>::StringSize);
             ensure!(manifest_hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
-			ensure!(<EscrowFactory>::contains_key(factory_id), Error::<T>::FactoryDoesNotExist);
+            ensure!(<EscrowFactory>::contains_key(factory_id), Error::<T>::FactoryDoesNotExist);
             let factory_escrows = <EscrowFactory>::get(factory_id);
-			ensure!(factory_escrows.len() <= MAX_ESCROWS_PER_FACTORY, Error::<T>::FactoryOutOfBounds);
-			// This is fine as `100 + 100 < 256`, so no chance of overflow.
+            ensure!(factory_escrows.len() <= MAX_ESCROWS_PER_FACTORY, Error::<T>::FactoryOutOfBounds);
+            // This is fine as `100 + 100 < 256`, so no chance of overflow.
             let total_stake = reputation_oracle_stake.deconstruct()
                 .saturating_add(recording_oracle_stake.deconstruct());
             ensure!(total_stake <= 100, Error::<T>::StakeOutOfBounds);
@@ -316,12 +316,12 @@ decl_module! {
                 recording_oracle_stake,
                 canceller: who.clone(),
                 account: account.clone(),
-				factory: factory_id,
+                factory: factory_id,
             };
             <Escrows<T>>::insert(id, new_escrow);
             <EscrowFactory>::mutate(factory_id, |list| {
-				list.push(id)
-			});
+                list.push(id)
+            });
 
             Self::deposit_event(RawEvent::Pending(id, who, manifest_url, manifest_hash, account));
         }
