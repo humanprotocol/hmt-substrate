@@ -22,6 +22,7 @@ struct EscrowBuilder {
 	reputation_oracle_stake: Option<Percent>,
 	recording_oracle_stake: Option<Percent>,
 	account: Option<AccountId>,
+	factory: u128,
 }
 
 impl EscrowBuilder {
@@ -81,6 +82,7 @@ impl EscrowBuilder {
 		let id = self.id.unwrap_or(0);
 		let account = Escrow::account_id_for(id);
 		let end_time = 1000;
+		let factory = 0;
 		EscrowInfo {
 			status,
 			end_time,
@@ -92,16 +94,33 @@ impl EscrowBuilder {
 			reputation_oracle_stake,
 			recording_oracle_stake,
 			account,
+			factory,
 		}
 	}
 }
 
 fn create_escrow(sender: AccountId, e: &EscrowInfo<Moment, AccountId>) -> DispatchResult {
 	let i = e.clone();
+	Escrow::create_factory(Origin::signed(sender))?;
 	Escrow::create(
 		Origin::signed(sender),
 		i.manifest_url,
 		i.manifest_hash,
+		0,
+		i.reputation_oracle,
+		i.recording_oracle,
+		i.reputation_oracle_stake,
+		i.recording_oracle_stake,
+	)
+}
+
+fn create_escrow_noop(sender: AccountId, e: &EscrowInfo<Moment, AccountId>) -> DispatchResult {
+	let i = e.clone();
+	Escrow::create(
+		Origin::signed(sender),
+		i.manifest_url,
+		i.manifest_hash,
+		0,
 		i.reputation_oracle,
 		i.recording_oracle,
 		i.reputation_oracle_stake,
@@ -164,20 +183,21 @@ fn create_negative_tests() {
 		let sender = 1;
 		let id = 0;
 		{
+			let _ = Escrow::create_factory(Origin::signed(sender));
 			let escrow = EscrowBuilder::new()
 				.id(id)
 				.reputation_stake(Percent::from_percent(80))
 				.recording_stake(Percent::from_percent(80))
 				.build();
-			assert_noop!(create_escrow(sender, &escrow), Error::<Test>::StakeOutOfBounds);
+			assert_noop!(create_escrow_noop(sender, &escrow), Error::<Test>::StakeOutOfBounds);
 		}
 		{
 			let escrow = EscrowBuilder::new().id(id).manifest_hash(vec![24; 101]).build();
-			assert_noop!(create_escrow(sender, &escrow), Error::<Test>::StringSize);
+			assert_noop!(create_escrow_noop(sender, &escrow), Error::<Test>::StringSize);
 		}
 		{
 			let escrow = EscrowBuilder::new().id(id).manifest_url(vec![24; 101]).build();
-			assert_noop!(create_escrow(sender, &escrow), Error::<Test>::StringSize);
+			assert_noop!(create_escrow_noop(sender, &escrow), Error::<Test>::StringSize);
 		}
 	});
 }
