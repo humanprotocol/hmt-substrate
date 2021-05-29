@@ -34,9 +34,6 @@ pub type FactoryId = u128;
 
 const MODULE_ID: ModuleId = ModuleId(*b"escrowhp");
 
-/// Maximum escrows per factory; to avoid an unbounded weight when querying.
-const MAX_ESCROWS_PER_FACTORY: usize = 20;
-
 /// Configuration and state for an escrow.
 #[derive(Clone, Encode, Decode, Debug, PartialEq, Eq)]
 pub struct EscrowInfo<Moment, AccountId> {
@@ -166,6 +163,8 @@ pub trait Trait: frame_system::Trait + timestamp::Trait {
     /// *Note:* Not enforced, but used for weight estimation. Make sure to not add more trusted
     /// handlers than this.
     type HandlersLimit: Get<u32>;
+    /// Maximum escrows per factory; to avoid an unbounded weight when querying.
+    type EscrowsPerFactoryLimit: Get<u32>;
     type WeightInfo: WeightInfo;
 }
 
@@ -289,7 +288,7 @@ decl_module! {
             ensure!(manifest_hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
             ensure!(<EscrowFactory>::contains_key(factory_id), Error::<T>::FactoryDoesNotExist);
             let factory_escrows = <EscrowFactory>::get(factory_id);
-            ensure!(factory_escrows.len() <= MAX_ESCROWS_PER_FACTORY, Error::<T>::FactoryOutOfBounds);
+            ensure!(factory_escrows.len() as u32 <= T::EscrowsPerFactoryLimit::get(), Error::<T>::FactoryOutOfBounds);
             // This is fine as `100 + 100 < 256`, so no chance of overflow.
             let total_stake = reputation_oracle_stake.deconstruct()
                 .saturating_add(recording_oracle_stake.deconstruct());
@@ -346,7 +345,7 @@ decl_module! {
         ///
         /// Clears escrow state.
         /// Requires trusted handler privileges.
-        #[weight = <T as Trait>::WeightInfo::abort(T::HandlersLimit::get() as u32, 19u32)]
+        #[weight = <T as Trait>::WeightInfo::abort(T::HandlersLimit::get() as u32, T::EscrowsPerFactoryLimit::get() as u32)]
         fn abort(origin, id: EscrowId) {
             let escrow = Self::escrow(id).ok_or(Error::<T>::MissingEscrow)?;
             let _ = Self::ensure_trusted(origin, id)?;

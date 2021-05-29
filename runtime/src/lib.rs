@@ -285,6 +285,7 @@ parameter_types! {
 parameter_types! {
 	pub const StandardDuration: Moment = 8_640_000;
 	pub const HandlersLimit: u32 = 20;
+	pub const EscrowsPerFactoryLimit: u32 = 20;
 }
 
 impl pallet_escrow::Trait for Runtime {
@@ -295,6 +296,7 @@ impl pallet_escrow::Trait for Runtime {
 	type BulkAccountsLimit = BulkAccountsLimit;
 	type BulkBalanceLimit = BulkBalanceLimit;
 	type HandlersLimit = HandlersLimit;
+	type EscrowsPerFactoryLimit = EscrowsPerFactoryLimit;
 	type WeightInfo = weights::pallet_escrow::WeightInfo;
 }
 
