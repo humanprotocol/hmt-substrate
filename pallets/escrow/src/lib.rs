@@ -288,7 +288,7 @@ decl_module! {
             ensure!(manifest_hash.len() <= T::StringLimit::get(), Error::<T>::StringSize);
             ensure!(<EscrowFactory>::contains_key(factory_id), Error::<T>::FactoryDoesNotExist);
             let factory_escrows = <EscrowFactory>::get(factory_id);
-            ensure!(factory_escrows.len() as u32 <= T::EscrowsPerFactoryLimit::get(), Error::<T>::FactoryOutOfBounds);
+            ensure!(factory_escrows.len() as u32 < T::EscrowsPerFactoryLimit::get(), Error::<T>::FactoryOutOfBounds);
             // This is fine as `100 + 100 < 256`, so no chance of overflow.
             let total_stake = reputation_oracle_stake.deconstruct()
                 .saturating_add(recording_oracle_stake.deconstruct());
