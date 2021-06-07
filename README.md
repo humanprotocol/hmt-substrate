@@ -1,6 +1,6 @@
-# Substrate Node Template
+# Human Protocol's Substrate Node
 
-A new FRAME-based Substrate node, ready for hacking :rocket:
+Based on the [solidity contracts](https://github.com/humanprotocol/hmt-escrow)
 
 ## Local Development
 
