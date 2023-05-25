@@ -10,7 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@polkadot/types": "^2.7.1",
+    "@polkadot/types": "^2.10.1",
     "halva-cli": "^0.3.3",
     "should": "^13.2.3"
   }
